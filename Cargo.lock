@@ -1873,7 +1873,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "freyacn-cli"
+name = "freyacn_cli"
 version = "0.2.0-alpha.1"
 dependencies = [
  "anyhow",
