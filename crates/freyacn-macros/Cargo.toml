@@ -1,0 +1,20 @@
+[package]
+name = "freyacn_macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors = ["Bright Madueke <maduekebright399@gmail.com>"]
+description = "Procedural macros for building feyacn compnents"
+readme = "README.md"
+keywords = ["ui", "freyacn", "proc_macro", "procmacro"]
+categories = ["gui", "development-tools"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+proc-macro2 = "1.0"
+syn = { version = "2", features = ["full"] }
+

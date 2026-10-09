@@ -1,0 +1,20 @@
+[package]
+name = "freyacn"
+version.workspace = true
+edition.workspace = true
+description = "A Freya component library with Tailwind‑inspired extension traits for building beautiful, theme‑aware UIs."
+license.workspace = true
+readme = "README.md"
+keywords = ["gui", "freya", "ui", "components", "tailwind"]
+categories = ["gui", "development-tools"]
+
+[features]
+hotreload = ["freya/hotreload"]
+
+[dependencies]
+freya = { version = "0.4.1", features = ["icons"] }
+freya-core = "0.4.1"
+freya-icons = { version = "0.4.1", features = ["lucide"] }
+freyacn_macros = { workspace = true }
+paste = "1.0.15"
+rustc-hash = "2.1.3"
