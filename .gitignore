@@ -1,2 +1,5 @@
 /target
 /.idea
+/crates/freyacn/target
+/crates/freyacn-cli/target
+/crates/freyacn-macros/target
