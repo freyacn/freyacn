@@ -101,7 +101,7 @@ fn extension_for(name: &str, struct_name: &Ident) -> syn::Result<Extension> {
                 children: ::std::vec::Vec::new()
             }],
             locals: vec![quote! {
-                let children: &::std::vec::Vec<::freyacn::Element> = &self.children;
+                let mut children: &::std::vec::Vec<::freyacn::Element> = &self.children;
             }],
             impls: vec![quote! {
                 impl ::freyacn::ChildrenExt for #struct_name {
@@ -153,7 +153,7 @@ fn extension_for(name: &str, struct_name: &Ident) -> syn::Result<Extension> {
                 style: <::freyacn::Style as ::core::default::Default>::default()
             }],
             locals: vec![quote! {
-                let style: ::freyacn::Style = self.style;
+                let style: &::freyacn::Style = &self.style;
             }],
             impls: vec![quote! {
                 impl ::freyacn::StyleExt for #struct_name {

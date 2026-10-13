@@ -24,3 +24,4 @@ pub fn blend_colors(base: Color, blend: Color, ratio: f32) -> Color {
     let a = a1 + (a2 - a1) * ratio;
     Color::from_argb((a * 255.0) as u8, r as u8, g as u8, b as u8)
 }
+

@@ -4,8 +4,7 @@
 //! and sizes (default, xs, sm, lg, icon, icon-xs, icon-sm, icon-lg). It integrates with the
 //! FreyaCN theming system and all extension traits.
 
-use crate::{StyleExt, component, use_cn_theme};
-use freya::prelude::{Button as ButtonPrimitive, rect};
+use crate::*;
 
 /// Available visual variants for the button, matching shadcn/ui styles.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -91,26 +90,410 @@ impl From<&str> for ButtonSize {
     }
 }
 
-#[component(_variant: ButtonVariant = ButtonVariant::Default, _size: ButtonSize = ButtonSize::Default)]
-#[extensions(children, key, style, event_handlers, corner_radius)]
+#[component(
+    _variant: ButtonVariant = ButtonVariant::Default,
+    _size: ButtonSize = ButtonSize::Default,
+    disabled: bool = false
+)]
+#[extensions(style, children)]
 #[derive(PartialEq, Clone)]
 pub fn Button() {
     let theme = use_cn_theme().read();
-    let mut button_primitive = ButtonPrimitive::new();
+
+    let is_icon_only = matches!(
+        _size,
+        ButtonSize::Icon | ButtonSize::IconXs | ButtonSize::IconSm | ButtonSize::IconLg
+    );
+
+    let mut button = ButtonPrimitive::new();
+
+    // ---- Content container ----
+    let mut content = rect()
+        .horizontal()
+        .cross_align(Alignment::Center)
+        .main_align(Alignment::Center)
+        .width(Size::auto())
+        .height(Size::auto());
+
+    // ---- Wrap the button in a container to apply extra styles ----
     let mut wrapper = rect();
 
-    match _variant {
+    // Compute variant colors
+    button = match _variant {
         ButtonVariant::Default => {
+            let hover_bg = color_with_alpha(theme.primary, 0.8);
+            content = content.color(theme.primary_foreground);
+
+            button
+                .background(theme.primary)
+                .color(theme.primary_foreground)
+                .hover_background(hover_bg)
+                .border_fill(Color::TRANSPARENT)
         }
-        ButtonVariant::Destructive => {}
-        ButtonVariant::Outline => {}
-        ButtonVariant::Secondary => {}
-        ButtonVariant::Ghost => {}
-        ButtonVariant::Link => {}
-        _ => {}
+
+        ButtonVariant::Secondary => {
+            let hover_bg = blend_colors(theme.secondary, theme.foreground, 0.05);
+            content = content.color(theme.secondary_foreground);
+
+            button
+                .background(theme.secondary)
+                .color(theme.secondary_foreground)
+                .hover_background(hover_bg)
+                .border_fill(Color::TRANSPARENT)
+        }
+
+        ButtonVariant::Ghost => {
+            content = content.color(theme.foreground);
+
+            button
+                .background(Color::TRANSPARENT)
+                .hover_background(theme.muted)
+                .color(theme.foreground)
+                .border_fill(Color::TRANSPARENT)
+        }
+
+        ButtonVariant::Destructive => {
+            let bg = color_with_alpha(theme.destructive, 0.1);
+            let hover_bg = color_with_alpha(theme.destructive, 0.2);
+            content = content.color(theme.destructive);
+
+            button
+                .background(bg)
+                .hover_background(hover_bg)
+                .color(theme.destructive)
+                .border_fill(Color::TRANSPARENT)
+        }
+
+        ButtonVariant::Link => {
+            content = content.color(theme.primary);
+
+            button
+                .background(Color::TRANSPARENT)
+                .hover_background(Color::TRANSPARENT)
+                .color(theme.primary)
+                .border_fill(Color::TRANSPARENT)
+        }
+
+        ButtonVariant::Outline => {
+            let mut b = Border::default().fill(theme.border);
+            wrapper = wrapper.border(b);
+            content = content.color(theme.foreground);
+
+            button
+                .background(theme.background)
+                .hover_background(theme.muted)
+                .color(theme.foreground)
+                .border_fill(Color::TRANSPARENT)
+        }
     };
 
-    wrapper
+    // Size metrics (matching shadcn React exactly).
+    button = match _size {
+        ButtonSize::Default => {
+            content = content.spacing(6.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(32.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(32.0));
+
+            button
+                .height(Size::px(32.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(10.0)
+                } else {
+                    Gaps::new(0.0, 10.0, 0.0, 10.0)
+                })
+                .corner_radius(8.0)
+        }
+
+        ButtonSize::Xs => {
+            content = content.spacing(4.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(24.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(24.0));
+
+            button
+                .height(Size::px(24.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(8.0)
+                } else {
+                    Gaps::new(0.0, 8.0, 0.0, 8.0)
+                })
+                .corner_radius(6.0)
+        }
+
+        ButtonSize::Sm => {
+            content = content.spacing(4.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(28.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(28.0));
+
+            button
+                .height(Size::px(28.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(10.0)
+                } else {
+                    Gaps::new(0.0, 10.0, 0.0, 10.0)
+                })
+                .corner_radius(6.0)
+        }
+
+        ButtonSize::Lg => {
+            content = content.spacing(6.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(36.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(36.0));
+
+            button
+                .height(Size::px(36.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(10.0)
+                } else {
+                    Gaps::new(0.0, 10.0, 0.0, 10.0)
+                })
+                .corner_radius(8.0)
+        }
+
+        ButtonSize::Icon => {
+            content = content.spacing(0.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(32.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(32.0));
+
+            button
+                .height(Size::px(32.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(4.0)
+                } else {
+                    Gaps::new(0.0, 4.0, 0.0, 4.0)
+                })
+                .corner_radius(8.0)
+        }
+
+        ButtonSize::IconLg => {
+            content = content.spacing(0.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(36.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(36.0));
+
+            button
+                .height(Size::px(36.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(4.0)
+                } else {
+                    Gaps::new(0.0, 4.0, 0.0, 4.0)
+                })
+                .corner_radius(8.0)
+        }
+
+        ButtonSize::IconSm => {
+            content = content.spacing(0.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(28.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(28.0));
+
+            button
+                .height(Size::px(28.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(4.0)
+                } else {
+                    Gaps::new(0.0, 4.0, 0.0, 4.0)
+                })
+                .corner_radius(6.0)
+        }
+
+        ButtonSize::IconXs => {
+            content = content.spacing(0.0);
+
+            wrapper = wrapper
+                .width(if is_icon_only {
+                    Size::px(24.0)
+                } else {
+                    Size::auto()
+                })
+                .height(Size::px(24.0));
+
+            button
+                .height(Size::px(24.0))
+                .padding(if is_icon_only {
+                    Gaps::new_all(4.0)
+                } else {
+                    Gaps::new(0.0, 4.0, 0.0, 4.0)
+                })
+                .corner_radius(6.0)
+        }
+    };
+
+    // Add children
+    for child in children {
+        content = content.child(child.clone());
+    }
+
+    // Check if some styles are set and then override the ones from the variants if set
+    if let Some(cross_align) = &style.cross_align {
+        content = content.cross_align(cross_align.clone());
+    }
+
+    if let Some(main_align) = &style.main_align {
+        content = content.main_align(main_align.clone())
+    }
+
+    if let Some(direction) = &style.direction {
+        content = content.direction(direction.clone());
+    }
+
+    if let Some(spacing) = &style.spacing {
+        content = content.spacing(spacing.clone());
+    }
+
+    if let Some(text_color) = &style.text_color {
+        content = content.color(text_color.clone());
+        button = button.color(text_color.clone());
+    }
+
+    if let Some(border_color) = &style.border_color {
+        wrapper = wrapper.border(style.clone().to_border());
+    }
+
+    if let Some(border_width) = &style.border_width {
+        wrapper = wrapper.border(style.clone().to_border());
+    }
+
+    if let Some(font_size) = &style.font_size {
+        content = content.font_size(font_size.clone())
+    }
+
+    if let Some(font_slant) = &style.font_slant {
+        content = content.font_slant(font_slant.clone())
+    }
+
+    if let Some(font_weight) = &style.font_weight {
+        content = content.font_weight(font_weight.clone())
+    }
+
+    if let Some(text_align) = &style.text_align {
+        content = content.text_align(text_align.clone());
+    }
+
+    if let Some(text_decoration) = &style.text_decoration {
+        content = content.text_decoration(text_decoration.clone());
+    }
+
+    if let Some(width) = &style.width {
+        wrapper = wrapper.width(width.clone());
+    }
+
+    if let Some(height) = &style.height {
+        wrapper = wrapper.height(height.clone());
+    }
+
+    if let Some(min_width) = &style.min_width {
+        wrapper = wrapper.min_width(min_width.clone());
+    }
+
+    if let Some(min_height) = &style.min_height {
+        wrapper = wrapper.min_height(min_height.clone());
+    }
+
+    if let Some(max_width) = &style.max_width {
+        wrapper = wrapper.max_width(max_width.clone());
+    }
+
+    if let Some(max_height) = &style.max_height {
+        wrapper = wrapper.max_height(max_height.clone());
+    }
+
+    if let Some(opacity) = &style.opacity {
+        wrapper = wrapper.opacity(opacity.clone());
+    }
+
+    // confirm background is not default and is not the same with any variant
+    if style.background.clone() != Fill::default() && &style.background != &button.background {}
+
+    /*
+    // Add children.
+        for element in &self.elements {
+            content = content.child(element.clone());
+        }
+
+        button = button.child(content);
+
+        // ---- Wrap the button in a container to apply extra styles ----
+        let mut wrapper = rect()
+            .width(self.width_override.clone().unwrap_or_else(|| {
+                if is_icon_only {
+                    Size::px(height)
+                } else {
+                    Size::auto()
+                }
+            }))
+            .height(self.height_override.clone().unwrap_or(Size::px(height)));
+
+        // Apply min/max sizing.
+        if let Some(min_w) = self.min_width_override.clone() {
+            wrapper = wrapper.min_width(min_w);
+        }
+        if let Some(min_h) = self.min_height_override.clone() {
+            wrapper = wrapper.min_height(min_h);
+        }
+        if let Some(max_w) = self.max_width_override.clone() {
+            wrapper = wrapper.max_width(max_w);
+        }
+        if let Some(max_h) = self.max_height_override.clone() {
+            wrapper = wrapper.max_height(max_h);
+        }
+
+        if let Some(margin) = self.margin_override {
+            wrapper = wrapper.margin(margin);
+        }
+
+        if let Some(opacity) = self.opacity {
+            wrapper = wrapper.opacity(opacity);
+        }
+
+        if let Some(shadow) = self.shadow.clone() {
+            wrapper = wrapper.shadow(shadow);
+        }
+
+        // ---- Assemble ----
+        wrapper.child(button)
+     */
+
+    button.child("Labek")
 }
 
 /// impl custome methods for the ButtonComponent struct
@@ -119,7 +502,7 @@ impl ButtonComponent {
     pub fn variant(self, variant: impl Into<ButtonVariant>) -> Self {
         self._variant(variant.into())
     }
-    pub fn size(mut self, size: impl Into<ButtonSize>) -> Self {
+    pub fn size(self, size: impl Into<ButtonSize>) -> Self {
         self._size(size.into())
     }
 }

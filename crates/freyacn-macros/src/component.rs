@@ -127,8 +127,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     let mut kept_attrs: Vec<Attribute> = Vec::new();
     for a in std::mem::take(&mut func.attrs) {
         if a.path().is_ident("struct_fields") {
-            let decls = a
-                .parse_args_with(Punctuated::<PropDecl, Token![,]>::parse_terminated)?;
+            let decls = a.parse_args_with(Punctuated::<PropDecl, Token![,]>::parse_terminated)?;
             struct_field_decls.extend(decls);
         } else {
             kept_attrs.push(a);
@@ -155,12 +154,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         let tokens = a
             .meta
             .require_list()
-            .map_err(|_| {
-                syn::Error::new_spanned(
-                    &a,
-                    "expected `#[extensions(name1, name2, …)]`",
-                )
-            })?
+            .map_err(|_| syn::Error::new_spanned(&a, "expected `#[extensions(name1, name2, …)]`"))?
             .tokens
             .clone();
         extension_names = extension::parse_names(tokens)?;
@@ -267,8 +261,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // =====================================================================
 
     // 6a. Duplicate names anywhere in `props`.
-    let mut seen: std::collections::HashMap<String, PropSource> =
-        std::collections::HashMap::new();
+    let mut seen: std::collections::HashMap<String, PropSource> = std::collections::HashMap::new();
     for prop in &props {
         let key = prop.name.to_string();
         if let Some(previous) = seen.get(&key) {
@@ -661,9 +654,7 @@ pub fn to_pascal_case(s: &str) -> String {
             let mut chars = seg.chars();
             match chars.next() {
                 None => String::new(),
-                Some(first) => {
-                    first.to_uppercase().collect::<String>() + chars.as_str()
-                }
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
             }
         })
         .collect()

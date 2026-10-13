@@ -29,6 +29,7 @@ fn app() -> impl IntoElement {
         .width(Size::fill())
         .height(Size::fill())
         .show_scrollbar(true)
+        .direction(Direction::Vertical)
         .child(
             rect()
                 .width(Size::fill())
