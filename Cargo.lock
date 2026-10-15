@@ -1870,6 +1870,7 @@ dependencies = [
  "freyacn_macros",
  "paste",
  "rustc-hash",
+ "torin",
 ]
 
 [[package]]

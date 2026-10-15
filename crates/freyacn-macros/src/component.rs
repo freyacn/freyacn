@@ -1,4 +1,4 @@
-//! The `#[component]` attribute macro.
+//! The `#[component(...)]` attribute macro.
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
@@ -11,10 +11,11 @@ use syn::{
 use crate::extension;
 
 // ---------------------------------------------------------------------------
-// Attribute prop parsing
+// Prop declaration parsing
 // ---------------------------------------------------------------------------
 //
-// Grammar (shared by `#[component(...)]` and `#[struct_fields(...)]`):
+// Grammar (shared by `props(...)`, `variants(...)`, and
+// `#[struct_fields(...)]`):
 //
 //     prop := ident ":" type [ "=" expr ]
 //     list := prop { "," prop } [ "," ]
@@ -60,12 +61,62 @@ impl Parse for PropDecl {
     }
 }
 
-struct PropsList(Vec<PropDecl>);
+// ---------------------------------------------------------------------------
+// `#[component(props(…), ext(…), variants(…))]`
+// ---------------------------------------------------------------------------
 
-impl Parse for PropsList {
+struct ComponentArgs {
+    props: Vec<PropDecl>,
+    ext: Vec<String>,
+    variants: Vec<PropDecl>,
+}
+
+impl Parse for ComponentArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let decls = Punctuated::<PropDecl, Token![,]>::parse_terminated(input)?;
-        Ok(Self(decls.into_iter().collect()))
+        let mut props = Vec::new();
+        let mut ext = Vec::new();
+        let mut variants = Vec::new();
+
+        while !input.is_empty() {
+            let name: Ident = input.parse()?;
+            let content;
+            syn::parenthesized!(content in input);
+
+            match name.to_string().as_str() {
+                "props" => {
+                    let items = Punctuated::<PropDecl, Token![,]>::parse_terminated(&content)?;
+                    props.extend(items);
+                }
+                "ext" => {
+                    let items = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
+                    ext.extend(items.into_iter().map(|i| i.to_string()));
+                }
+                "variants" => {
+                    let items = Punctuated::<PropDecl, Token![,]>::parse_terminated(&content)?;
+                    variants.extend(items);
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        &name,
+                        format!(
+                            "unknown group `{other}`. \
+                             Expected `props(...)`, `ext(...)`, or `variants(...)`."
+                        ),
+                    ));
+                }
+            }
+
+            if input.is_empty() {
+                break;
+            }
+            input.parse::<Token![,]>()?;
+        }
+
+        Ok(Self {
+            props,
+            ext,
+            variants,
+        })
     }
 }
 
@@ -84,23 +135,20 @@ enum PropKind {
     WithDefault(Expr),
 }
 
-/// Where a field came from. Used to decide whether to emit a setter, how to
-/// document the field, and how to phrase collision errors.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PropSource {
-    /// `fn Card(name: String)` — a required prop.
     FnParam,
-    /// `#[component(name: String)]` — an optional or defaulted prop.
     AttrProp,
-    /// `#[struct_fields(name: Type)]` — internal storage.
     StructField,
+    Variant,
 }
 
 fn source_label(source: PropSource) -> &'static str {
     match source {
         PropSource::FnParam => "a function parameter",
-        PropSource::AttrProp => "an attribute prop (`#[component(...)]`)",
+        PropSource::AttrProp => "an attribute prop (`props(...)`)",
         PropSource::StructField => "a struct field (`#[struct_fields(...)]`)",
+        PropSource::Variant => "a variant prop (`variants(...)`)",
     }
 }
 
@@ -135,30 +183,27 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     }
     func.attrs = kept_attrs;
 
-    // ---- 0b. Preserve user doc comments. ----
+    // ---- 0b. Reject leftover `#[extensions(...)]`. ----
+    if let Some(pos) = func
+        .attrs
+        .iter()
+        .position(|a| a.path().is_ident("extensions"))
+    {
+        return Err(syn::Error::new_spanned(
+            &func.attrs[pos],
+            "`#[extensions(...)]` is no longer an attribute on `#[component]`. \
+             Move the extension names into the `ext(...)` group, e.g. \
+             `#[component(ext(children, style))]`.",
+        ));
+    }
+
+    // ---- 0c. Preserve user doc comments. ----
     let user_docs: Vec<Attribute> = func
         .attrs
         .iter()
         .filter(|a| a.path().is_ident("doc"))
         .cloned()
         .collect();
-
-    // ---- 0c. `#[extensions(...)]` — pulled out second. ----
-    let mut extension_names: Vec<String> = Vec::new();
-    if let Some(pos) = func
-        .attrs
-        .iter()
-        .position(|a| a.path().is_ident("extensions"))
-    {
-        let a = func.attrs.remove(pos);
-        let tokens = a
-            .meta
-            .require_list()
-            .map_err(|_| syn::Error::new_spanned(&a, "expected `#[extensions(name1, name2, …)]`"))?
-            .tokens
-            .clone();
-        extension_names = extension::parse_names(tokens)?;
-    }
 
     // ---- 0d. Everything remaining is forwarded to the struct. ----
     let forwarded_attrs: Vec<Attribute> = func
@@ -178,10 +223,47 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     let vis = func.vis.clone();
 
     // =====================================================================
-    // 2. Extension bundle.
+    // 2. Parse `#[component(...)]` groups.
     // =====================================================================
 
-    let extensions_code = extension::collect(&struct_ident, &extension_names)?;
+    let args: ComponentArgs = syn::parse2(attr)?;
+    let extension_names = args.ext;
+    let attr_props = args.props;
+    let variant_props = args.variants;
+
+    // Every variant prop must declare a default.
+    for v in &variant_props {
+        if v.default.is_none() {
+            return Err(syn::Error::new_spanned(
+                &v.name,
+                format!(
+                    "variant prop `{}` requires a default, e.g. \
+                     `{}: MyEnum = MyEnum::Default`",
+                    v.name, v.name,
+                ),
+            ));
+        }
+    }
+
+    // Variants require `ext(style)` — the merged style needs somewhere to
+    // live in the render body.
+    if !variant_props.is_empty() && !extension_names.iter().any(|n| n == "style") {
+        return Err(syn::Error::new_spanned(
+            &variant_props[0].name,
+            "`variants(...)` requires `style` to also be listed in `ext(...)`, \
+             so the resolved variant styles have somewhere to be merged. \
+             Add `style`, e.g. `ext(style, children)`.",
+        ));
+    }
+
+    let variant_field_names: Vec<Ident> = variant_props.iter().map(|p| p.name.clone()).collect();
+
+    // =====================================================================
+    // 3. Extension bundle.
+    // =====================================================================
+
+    let extensions_code =
+        extension::collect(&struct_ident, &extension_names, &variant_field_names)?;
     let ext_field_defs = &extensions_code.field_defs;
     let ext_field_inits = &extensions_code.field_inits;
     let ext_local_bindings = &extensions_code.local_bindings;
@@ -189,7 +271,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     let ext_field_names = extension::collect_field_names(&extension_names);
 
     // =====================================================================
-    // 3. Function parameters (all required).
+    // 4. Function parameters (all required).
     // =====================================================================
 
     let fn_params: Vec<(Ident, Type)> = func
@@ -206,20 +288,13 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         .collect();
 
     // =====================================================================
-    // 4. `#[component(...)]` argument.
-    // =====================================================================
-
-    let PropsList(decls) = syn::parse2::<PropsList>(attr)?;
-
-    // =====================================================================
     // 5. Build `props` in declaration order:
-    //       attribute props → struct fields → fn params.
+    //       props(...) → struct_fields(...) → variants(...) → fn params
     // =====================================================================
 
     let mut props: Vec<Prop> = Vec::new();
 
-    // Attribute props.
-    for decl in decls {
+    for decl in attr_props {
         let kind = match decl.default {
             Some(expr) => PropKind::WithDefault(expr),
             None => PropKind::Optional,
@@ -232,7 +307,6 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         });
     }
 
-    // Struct fields.
     for decl in struct_field_decls {
         let kind = match decl.default {
             Some(expr) => PropKind::WithDefault(expr),
@@ -246,7 +320,16 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         });
     }
 
-    // Function parameters.
+    for decl in variant_props {
+        let expr = decl.default.expect("validated above");
+        props.push(Prop {
+            name: decl.name,
+            ty: decl.ty,
+            kind: PropKind::WithDefault(expr),
+            source: PropSource::Variant,
+        });
+    }
+
     for (name, ty) in &fn_params {
         props.push(Prop {
             name: name.clone(),
@@ -260,7 +343,6 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // 6. Collision checks.
     // =====================================================================
 
-    // 6a. Duplicate names anywhere in `props`.
     let mut seen: std::collections::HashMap<String, PropSource> = std::collections::HashMap::new();
     for prop in &props {
         let key = prop.name.to_string();
@@ -278,15 +360,14 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         seen.insert(key, prop.source);
     }
 
-    // 6b. Extension fields are reserved by freyacn.
     for prop in &props {
         if ext_field_names.iter().any(|n| n == &prop.name.to_string()) {
             return Err(syn::Error::new_spanned(
                 &prop.name,
                 format!(
-                    "`{}` collides with a field contributed by \
-                     `#[extensions(...)]`. Extension fields are reserved by \
-                     freyacn and cannot be shadowed by {}.",
+                    "`{}` collides with a field contributed by `ext(...)`. \
+                     Extension fields are reserved by freyacn and cannot be \
+                     shadowed by {}.",
                     prop.name,
                     source_label(prop.source),
                 ),
@@ -295,7 +376,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     }
 
     // =====================================================================
-    // 7. Struct fields  (props → struct fields → extension fields).
+    // 7. Struct fields.
     // =====================================================================
 
     let prop_fields = props.iter().map(|p| {
@@ -319,8 +400,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                 format!(
                     "Internal storage field `{name}` (`{ty_str}`).\n\n\
                      **Struct field.** Declared via `#[struct_fields(...)]`; \
-                     initialised to `None`. No setter is generated — the user \
-                     manages this field through their own trait impls.\n\n\
+                     initialised to `None`. No setter is generated.\n\n\
                      The render body sees `&Option<{ty_str}>`."
                 ),
             ),
@@ -328,9 +408,9 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                 quote! { ::core::option::Option<#ty> },
                 format!(
                     "The `{name}` prop (`{ty_str}`).\n\n\
-                     **Optional.** Declared in `#[component]` without a \
-                     default; stored as `Option<{ty_str}>` and initialised to \
-                     `None`. The render body sees `&Option<{ty_str}>`.\n\n\
+                     **Optional.** Declared in `props(...)` without a default; \
+                     stored as `Option<{ty_str}>` and initialised to `None`. \
+                     The render body sees `&Option<{ty_str}>`.\n\n\
                      Set via [`Self::{name}`]."
                 ),
             ),
@@ -338,17 +418,30 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                 quote! { #ty },
                 format!(
                     "Internal storage field `{name}` (`{ty_str}`).\n\n\
-                     **Struct field.** Declared via `#[struct_fields(...)]` with \
-                     a default expression; initialised with it in \
+                     **Struct field.** Declared via `#[struct_fields(...)]` \
+                     with a default expression; initialised with it in \
                      [`Self::new`]. No setter is generated.\n\n\
                      The render body sees `&{ty_str}`."
+                ),
+            ),
+            (PropKind::WithDefault(_), PropSource::Variant) => (
+                quote! { #ty },
+                format!(
+                    "The `{name}` variant prop (`{ty_str}`).\n\n\
+                     **Variant.** Declared in `variants(...)` with a default. \
+                     Stored as `{ty_str}` and initialised with that default. \
+                     Its style is merged into the render body's `style` local \
+                     before the user overrides.\n\n\
+                     Set via [`Self::{name}`]; accepts any `impl Into<{ty_str}>` \
+                     — including `&str` and `String` when the enum implements \
+                     `From`."
                 ),
             ),
             (PropKind::WithDefault(_), _) => (
                 quote! { #ty },
                 format!(
                     "The `{name}` prop (`{ty_str}`).\n\n\
-                     **Defaulted.** Declared in `#[component]` with a default \
+                     **Defaulted.** Declared in `props(...)` with a default \
                      expression; stored as `{ty_str}` and initialised with it \
                      in [`Self::new`]. The render body sees `&{ty_str}`.\n\n\
                      Set via [`Self::{name}`]."
@@ -379,7 +472,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     });
 
     // =====================================================================
-    // 9. Setters — attribute props and fn params only.
+    // 9. Setters.
     // =====================================================================
 
     let prop_setters = props
@@ -409,14 +502,21 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                          `Option<{ty_str}>` directly."
                     ),
                 ),
-                PropKind::WithDefault(_) => (
-                    quote! { impl ::core::convert::Into<#ty> },
-                    format!(
-                        "Set the [`{name}`](Self::{name}) prop.\n\n\
-                         Defaulted prop — accepts any type convertible into \
-                         `{ty_str}`."
-                    ),
-                ),
+                PropKind::WithDefault(_) => {
+                    let kind_label = if p.source == PropSource::Variant {
+                        "Variant prop"
+                    } else {
+                        "Defaulted prop"
+                    };
+                    (
+                        quote! { impl ::core::convert::Into<#ty> },
+                        format!(
+                            "Set the [`{name}`](Self::{name}) prop.\n\n\
+                             {kind_label} — accepts any type convertible into \
+                             `{ty_str}`."
+                        ),
+                    )
+                }
             };
 
             quote! {
@@ -465,17 +565,17 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // 11. Generated documentation.
     // =====================================================================
 
-    // 11a. Public prop summary.
     let prop_summary: Vec<String> = props
         .iter()
         .filter(|p| p.source != PropSource::StructField)
         .map(|p| {
             let ty = &p.ty;
             let ty_str = quote!(#ty).to_string().replace(' ', "");
-            let kind = match &p.kind {
-                PropKind::Required => "required (fn param)",
-                PropKind::Optional => "optional",
-                PropKind::WithDefault(_) => "with default",
+            let kind = match (&p.kind, p.source) {
+                (_, PropSource::Variant) => "variant",
+                (PropKind::Required, _) => "required (fn param)",
+                (PropKind::Optional, _) => "optional",
+                (PropKind::WithDefault(_), _) => "with default",
             };
             format!("* `{}`: `{}` — {}", p.name, ty_str, kind)
         })
@@ -487,7 +587,6 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         prop_summary.join("\n")
     };
 
-    // 11b. Struct field summary.
     let struct_field_summary: Vec<String> = props
         .iter()
         .filter(|p| p.source == PropSource::StructField)
@@ -514,7 +613,6 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         )
     };
 
-    // 11c. Extensions summary.
     let ext_section = if extension_names.is_empty() {
         "*No extensions.*".to_string()
     } else {
@@ -551,9 +649,11 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
 
     let render_doc = format!(
         "Renders this [`{struct_ident}`].\n\n\
-         Props are bound by reference as locals: required and defaulted props \
-         as `&T`, optional props and struct fields as `&Option<T>`. Extension \
-         fields are bound the same way."
+         Props are bound by reference as locals: required, defaulted, and \
+         variant props as `&T`, optional props and struct fields as \
+         `&Option<T>`. Extension fields are bound the same way. When the \
+         component declares `variants(...)`, the `style` local is the merge \
+         of every variant's resolved style plus the user's overrides."
     );
 
     let macro_doc = format!(
@@ -598,12 +698,9 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // =====================================================================
 
     let expanded = quote! {
-        // 1. User doc comments on the function.
         #(#user_docs)*
-        // 2. Generated summary.
         #[doc = ""]
         #[doc = #struct_doc]
-        // 3. Every other attribute the user wrote on the function, verbatim.
         #(#forwarded_attrs)*
         #vis struct #struct_ident {
             #(#prop_fields,)*

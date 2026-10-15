@@ -896,6 +896,40 @@ pub struct Theme {
     pub chart_4: Color,
     /// Quinary chart colour.
     pub chart_5: Color,
+
+    // ----- Sidebar (shadcn v4) -----
+    /// Sidebar background.
+    pub sidebar: Color,
+    /// Sidebar foreground (text).
+    pub sidebar_foreground: Color,
+    /// Sidebar primary accent.
+    pub sidebar_primary: Color,
+    /// Foreground that contrasts with `sidebar_primary`.
+    pub sidebar_primary_foreground: Color,
+    /// Sidebar accent.
+    pub sidebar_accent: Color,
+    /// Foreground that contrasts with `sidebar_accent`.
+    pub sidebar_accent_foreground: Color,
+    /// Sidebar border colour.
+    pub sidebar_border: Color,
+    /// Sidebar focus ring colour.
+    pub sidebar_ring: Color,
+
+    // ----- State -----
+    /// Disabled background colour.
+    pub disabled: Color,
+    /// Disabled foreground colour.
+    pub disabled_foreground: Color,
+
+    // ----- Radius scale -----
+    /// `rounded-sm` radius in px.
+    pub radius_sm: f32,
+    /// `rounded-md` radius in px.
+    pub radius_md: f32,
+    /// `rounded-lg` radius in px.
+    pub radius_lg: f32,
+    /// `rounded-xl` radius in px.
+    pub radius_xl: f32,
 }
 
 impl Theme {
@@ -1024,6 +1058,18 @@ impl Theme {
                         colors.neutral_800,
                         colors.neutral_50,
                     ),
+                    "gray" => (
+                        colors.gray_950,
+                        colors.gray_50,
+                        colors.gray_800,
+                        colors.gray_400,
+                        colors.gray_800,
+                        colors.gray_800,
+                        colors.gray_950,
+                        colors.gray_950,
+                        colors.gray_800,
+                        colors.gray_50,
+                    ),
                     _ => panic!("Unknown base palette: {}", base),
                 }
             } else {
@@ -1124,6 +1170,18 @@ impl Theme {
                         colors.neutral_100,
                         colors.neutral_900,
                     ),
+                    "gray" => (
+                        colors.gray_50,
+                        colors.gray_950,
+                        colors.gray_100,
+                        colors.gray_500,
+                        colors.gray_200,
+                        colors.gray_200,
+                        colors.white,
+                        colors.white,
+                        colors.gray_100,
+                        colors.gray_900,
+                    ),
                     _ => panic!("Unknown base palette: {}", base),
                 }
             };
@@ -1139,6 +1197,7 @@ impl Theme {
                 "taupe" => (colors.taupe_50, colors.taupe_900),
                 "zinc" => (colors.zinc_50, colors.zinc_900),
                 "neutral" => (colors.neutral_50, colors.neutral_900),
+                "gray" => (colors.gray_50, colors.gray_900),
                 _ => panic!("Unknown base palette: {}", base),
             }
         } else {
@@ -1151,6 +1210,7 @@ impl Theme {
                 "taupe" => (colors.taupe_900, colors.taupe_50),
                 "zinc" => (colors.zinc_900, colors.zinc_50),
                 "neutral" => (colors.neutral_900, colors.neutral_50),
+                "gray" => (colors.gray_900, colors.gray_50),
                 _ => panic!("Unknown base palette: {}", base),
             }
         };
@@ -1195,6 +1255,27 @@ impl Theme {
             chart_3,
             chart_4,
             chart_5,
+
+            // Sidebar — starts in sync with the main surface; `theme_color`
+            // will re-align the primary/accent/ring tokens.
+            sidebar: bg,
+            sidebar_foreground: fg,
+            sidebar_primary: primary,
+            sidebar_primary_foreground: primary_fg,
+            sidebar_accent: accent,
+            sidebar_accent_foreground: accent_fg,
+            sidebar_border: border,
+            sidebar_ring: ring,
+
+            // Disabled — starts equal to the muted surface.
+            disabled: muted,
+            disabled_foreground: muted_fg,
+
+            // Default radius scale.
+            radius_sm: 2.0,
+            radius_md: 6.0,
+            radius_lg: 8.0,
+            radius_xl: 12.0,
         }
     }
 
@@ -1295,6 +1376,12 @@ impl Theme {
             accent,
             accent_foreground: accent_fg,
             ring,
+            // Keep the sidebar accent group in sync with the main one.
+            sidebar_primary: primary,
+            sidebar_primary_foreground: primary_fg,
+            sidebar_accent: accent,
+            sidebar_accent_foreground: accent_fg,
+            sidebar_ring: ring,
             ..self
         }
     }
@@ -1330,6 +1417,49 @@ impl Theme {
     /// Creates a theme with the `neutral` base and the given accent theme.
     pub fn neutral(dark: bool, theme: &str) -> Self {
         Self::base_color("neutral", dark).theme_color(theme)
+    }
+    /// Creates a theme with the `slate` base and the given accent theme.
+    pub fn slate(dark: bool, theme: &str) -> Self {
+        Self::base_color("slate", dark).theme_color(theme)
+    }
+    /// Creates a theme with the `gray` base and the given accent theme.
+    pub fn gray(dark: bool, theme: &str) -> Self {
+        Self::base_color("gray", dark).theme_color(theme)
+    }
+
+    // ------------------------------------------------------------------------
+    // Radius helpers (fluent overrides)
+    // ------------------------------------------------------------------------
+
+    /// Override the `rounded-sm` radius value.
+    pub fn radius_sm(mut self, value: f32) -> Self {
+        self.radius_sm = value;
+        self
+    }
+    /// Override the `rounded-md` radius value.
+    pub fn radius_md(mut self, value: f32) -> Self {
+        self.radius_md = value;
+        self
+    }
+    /// Override the `rounded-lg` radius value.
+    pub fn radius_lg(mut self, value: f32) -> Self {
+        self.radius_lg = value;
+        self
+    }
+    /// Override the `rounded-xl` radius value.
+    pub fn radius_xl(mut self, value: f32) -> Self {
+        self.radius_xl = value;
+        self
+    }
+    /// Set the base radius; derives `sm`, `md`, `lg`, `xl` from it the way
+    /// shadcn does (`sm = base - 4`, `md = base - 2`, `lg = base`,
+    /// `xl = base + 4`), clamped at 0.
+    pub fn radius(mut self, value: f32) -> Self {
+        self.radius_sm = (value - 4.0).max(0.0);
+        self.radius_md = (value - 2.0).max(0.0);
+        self.radius_lg = value;
+        self.radius_xl = value + 4.0;
+        self
     }
 }
 

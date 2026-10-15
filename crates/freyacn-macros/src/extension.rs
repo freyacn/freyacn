@@ -9,7 +9,6 @@ use syn::{Error, Fields, Ident, ItemStruct, Token, punctuated::Punctuated};
 // Supported extensions
 // ---------------------------------------------------------------------------
 
-/// Every extension name freyacn ships. Used for error messages.
 const SUPPORTED: &[&str] = &[
     "children",
     "key",
@@ -18,10 +17,6 @@ const SUPPORTED: &[&str] = &[
     "corner_radius",
 ];
 
-/// Extensions that require another extension to also be listed.
-///
-/// `corner_radius` delegates to `StyleExt::corner_radius`, so the
-/// `StyleExt` impl must exist for the delegation to compile.
 fn dependencies_of(name: &str) -> &'static [&'static str] {
     match name {
         "corner_radius" => &["style"],
@@ -51,7 +46,7 @@ pub fn parse_names(attr: TokenStream2) -> syn::Result<Vec<String>> {
 }
 
 // ---------------------------------------------------------------------------
-// Field-name lookup (used for collision detection)
+// Field-name lookup
 // ---------------------------------------------------------------------------
 
 pub fn field_names_for(name: &str) -> &'static [&'static str] {
@@ -60,7 +55,6 @@ pub fn field_names_for(name: &str) -> &'static [&'static str] {
         "key" => &["key"],
         "style" => &["style"],
         "event_handlers" => &["event_handlers"],
-        // `corner_radius` adds no field of its own — it reuses `style`.
         "corner_radius" => &[],
         _ => &[],
     }
@@ -84,24 +78,20 @@ struct Extension {
     impls: Vec<TokenStream2>,
 }
 
-fn extension_for(name: &str, struct_name: &Ident) -> syn::Result<Extension> {
+fn extension_for(
+    name: &str,
+    struct_name: &Ident,
+    variant_field_names: &[Ident],
+) -> syn::Result<Extension> {
     let ext = match name {
-        // -------------------------------------------------------------------
-        // children  →  freyacn::ChildrenExt
-        // -------------------------------------------------------------------
         "children" => Extension {
             fields: vec![quote! {
                 /// Child elements attached to this component.
-                ///
-                /// Added by `#[extensions(children)]`. Manipulate via
-                /// [`freyacn::ChildrenExt`] or write into this field directly.
                 pub children: ::std::vec::Vec<::freyacn::Element>
             }],
-            inits: vec![quote! {
-                children: ::std::vec::Vec::new()
-            }],
+            inits: vec![quote! { children: ::std::vec::Vec::new() }],
             locals: vec![quote! {
-                let mut children: &::std::vec::Vec<::freyacn::Element> = &self.children;
+                let children: &::std::vec::Vec<::freyacn::Element> = &self.children;
             }],
             impls: vec![quote! {
                 impl ::freyacn::ChildrenExt for #struct_name {
@@ -112,20 +102,12 @@ fn extension_for(name: &str, struct_name: &Ident) -> syn::Result<Extension> {
             }],
         },
 
-        // -------------------------------------------------------------------
-        // key  →  freyacn::KeyExt
-        // -------------------------------------------------------------------
         "key" => Extension {
             fields: vec![quote! {
                 /// The element's diff key.
-                ///
-                /// Added by `#[extensions(key)]`. Set via [`freyacn::KeyExt`]
-                /// to help the reconciler track this element across renders.
                 pub key: ::freyacn::DiffKey
             }],
-            inits: vec![quote! {
-                key: ::freyacn::DiffKey::None
-            }],
+            inits: vec![quote! { key: ::freyacn::DiffKey::None }],
             locals: vec![quote! {
                 let key: &::freyacn::DiffKey = &self.key;
             }],
@@ -141,39 +123,64 @@ fn extension_for(name: &str, struct_name: &Ident) -> syn::Result<Extension> {
         // -------------------------------------------------------------------
         // style  →  freyacn::StyleExt
         // -------------------------------------------------------------------
-        "style" => Extension {
-            fields: vec![quote! {
-                /// Accumulated styling state.
-                ///
-                /// Added by `#[extensions(style)]`. Every Tailwind-style
-                /// helper on [`freyacn::StyleExt`] mutates this field.
-                pub style: ::freyacn::Style
-            }],
-            inits: vec![quote! {
-                style: <::freyacn::Style as ::core::default::Default>::default()
-            }],
-            locals: vec![quote! {
-                let style: &::freyacn::Style = &self.style;
-            }],
-            impls: vec![quote! {
-                impl ::freyacn::StyleExt for #struct_name {
-                    fn get_style(&mut self) -> &mut ::freyacn::Style {
-                        &mut self.style
+        "style" => {
+            // The `style` field itself is a plain `Style` — the user's
+            // override layer. `#[component]` merges variant-derived styles
+            // into a local `style` binding at render time.
+            //
+            // If there are no variants, we emit a simple reference binding.
+            // Otherwise we compute a merged value into a local and bind
+            // that.
+            let locals = if variant_field_names.is_empty() {
+                vec![quote! {
+                    let style: &::freyacn::Style = &self.style;
+                }]
+            } else {
+                let merges = variant_field_names.iter().map(|field| {
+                    quote! {
+                        __freyacn_base = __freyacn_base.merge(
+                            ::freyacn::Variant::resolve(&self.#field)
+                        );
                     }
-                }
-            }],
-        },
+                });
+                vec![quote! {
+                    let __freyacn_merged_style: ::freyacn::Style = {
+                        let mut __freyacn_base =
+                            <::freyacn::Style as ::core::default::Default>::default();
+                        #(#merges)*
+                        __freyacn_base.merge(self.style.clone())
+                    };
+                    let style: &::freyacn::Style = &__freyacn_merged_style;
+                }]
+            };
 
-        // -------------------------------------------------------------------
-        // event_handlers  →  freyacn::EventHandlersExt
-        // -------------------------------------------------------------------
+            Extension {
+                fields: vec![quote! {
+                    /// Accumulated user overrides.
+                    ///
+                    /// Holds the style applied via [`StyleExt`] methods.
+                    /// Variant-derived styles are merged on top of this at
+                    /// render time — see the component macro's generated
+                    /// `render` body for details.
+                    pub style: ::freyacn::Style
+                }],
+                inits: vec![quote! {
+                    style: <::freyacn::Style as ::core::default::Default>::default()
+                }],
+                locals,
+                impls: vec![quote! {
+                    impl ::freyacn::StyleExt for #struct_name {
+                        fn get_style(&mut self) -> &mut ::freyacn::Style {
+                            &mut self.style
+                        }
+                    }
+                }],
+            }
+        }
+
         "event_handlers" => Extension {
             fields: vec![quote! {
                 /// Event-handler registry.
-                ///
-                /// Added by `#[extensions(event_handlers)]`. Provides
-                /// `on_press`, `on_secondary_press`, … via
-                /// [`freyacn::EventHandlersExt`].
                 pub event_handlers:
                     ::freyacn::FxHashMap<::freyacn::EventName, ::freyacn::EventHandlerType>
             }],
@@ -201,14 +208,6 @@ fn extension_for(name: &str, struct_name: &Ident) -> syn::Result<Extension> {
             }],
         },
 
-        // -------------------------------------------------------------------
-        // corner_radius  →  freyacn::CornerRadiusExt
-        // -------------------------------------------------------------------
-        //
-        // Depends on `style`: the impl delegates to `StyleExt::corner_radius`.
-        // Contributes no field, no init, and no render binding — it only adds
-        // a trait impl that forwards to the styling helpers already provided
-        // by `StyleExt`.
         "corner_radius" => Extension {
             fields: vec![],
             inits: vec![],
@@ -222,9 +221,6 @@ fn extension_for(name: &str, struct_name: &Ident) -> syn::Result<Extension> {
             }],
         },
 
-        // -------------------------------------------------------------------
-        // Unknown
-        // -------------------------------------------------------------------
         other => {
             let valid = SUPPORTED
                 .iter()
@@ -251,7 +247,11 @@ pub struct ExtensionsCode {
     pub trait_impls: Vec<TokenStream2>,
 }
 
-pub fn collect(struct_name: &Ident, names: &[String]) -> syn::Result<ExtensionsCode> {
+pub fn collect(
+    struct_name: &Ident,
+    names: &[String],
+    variant_field_names: &[Ident],
+) -> syn::Result<ExtensionsCode> {
     let mut out = ExtensionsCode {
         field_defs: Vec::new(),
         field_inits: Vec::new(),
@@ -260,24 +260,19 @@ pub fn collect(struct_name: &Ident, names: &[String]) -> syn::Result<ExtensionsC
     };
 
     for name in names {
-        // -- Dependency check ------------------------------------------------
-        //
-        // Fail at the attribute site with a targeted message rather than at
-        // the generated impl site with a trait-bound error.
         for dep in dependencies_of(name) {
             if !names.iter().any(|n| n == dep) {
                 return Err(Error::new(
                     Span::call_site(),
                     format!(
                         "`{name}` requires `{dep}` to also be listed in \
-                         `#[extensions(...)]`. Add it, e.g. \
-                         `#[extensions({dep}, {name})]`.",
+                         `ext(...)`. Add it, e.g. `ext({dep}, {name})`.",
                     ),
                 ));
             }
         }
 
-        let ext = extension_for(name, struct_name)?;
+        let ext = extension_for(name, struct_name, variant_field_names)?;
         out.field_defs.extend(ext.fields);
         out.field_inits.extend(ext.inits);
         out.local_bindings.extend(ext.locals);
@@ -296,7 +291,7 @@ pub fn parse_extensions(attr: TokenStream2, item: TokenStream2) -> syn::Result<T
     let struct_name = item_struct.ident.clone();
 
     let names = parse_names(attr)?;
-    let code = collect(&struct_name, &names)?;
+    let code = collect(&struct_name, &names, &[])?;
 
     let Fields::Named(named) = &item_struct.fields else {
         return Err(Error::new_spanned(

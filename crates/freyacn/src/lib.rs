@@ -8,6 +8,8 @@ mod extensions;
 mod icon_context;
 mod theme;
 mod utils;
+mod variants;
+pub use variants::Variant;
 
 pub use crate::extensions::style::{Style, StyleExt};
 pub use crate::theme::{
