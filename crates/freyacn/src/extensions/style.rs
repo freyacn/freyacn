@@ -37,6 +37,125 @@ pub enum BorderStyle {
     None,
 }
 
+/// Visibility of an element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visibility {
+    /// Render normally.
+    Visible,
+    /// Hidden, but still occupies layout space.
+    Hidden,
+    /// Hidden and does not occupy space (like `display: none`).
+    Collapse,
+}
+
+/// User-select behaviour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UserSelect {
+    None,
+    Text,
+    All,
+    Auto,
+}
+
+/// Resize behaviour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Resize {
+    None,
+    Both,
+    Horizontal,
+    Vertical,
+}
+
+/// Whitespace handling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Whitespace {
+    Normal,
+    Nowrap,
+    Pre,
+    PreLine,
+    PreWrap,
+    BreakSpaces,
+}
+
+/// Word-break behaviour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WordBreak {
+    Normal,
+    Words,
+    All,
+    Keep,
+}
+
+/// Text-overflow behaviour (used with `whitespace-nowrap` and a fixed width).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextEllipsis {
+    Clip,
+    Ellipsis,
+}
+
+/// List bullet style.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListStyleType {
+    None,
+    Disc,
+    Decimal,
+}
+
+/// List marker position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListStylePosition {
+    Inside,
+    Outside,
+}
+
+/// Background repeat behaviour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackgroundRepeat {
+    Repeat,
+    NoRepeat,
+    RepeatX,
+    RepeatY,
+}
+
+/// Background size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackgroundSize {
+    Auto,
+    Cover,
+    Contain,
+}
+
+/// Background attachment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackgroundAttachment {
+    Fixed,
+    Local,
+    Scroll,
+}
+
+/// Background clip region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackgroundClip {
+    Border,
+    Padding,
+    Content,
+    Text,
+}
+
+/// Border collapse behaviour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderCollapse {
+    Collapse,
+    Separate,
+}
+
+/// Table-layout mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableLayout {
+    Auto,
+    Fixed,
+}
+
 // ==============================================================
 // Macros — inherent Style methods
 // ==============================================================
@@ -73,11 +192,6 @@ macro_rules! style_semantic_color {
     };
 }
 
-/// Spacing scale macro.
-///
-/// **Fix**: `$name` is the identifier fragment (e.g. `0_5`), `$value` is the
-/// numeric value (e.g. `0.5`). `paste!` cannot concatenate float literals,
-/// but `0_5` is a valid integer-literal token.
 macro_rules! style_spacing_scale {
     ($prefix:ident, $base:ident, $(($name:literal, $value:expr)),* $(,)?) => {
         paste! {
@@ -151,6 +265,19 @@ pub struct Style {
     pub border_color: Option<Color>,
     pub border_style: Option<BorderStyle>,
     pub shadows: Vec<Shadow>,
+    pub outline_width: Option<f32>,
+    pub outline_color: Option<Color>,
+    pub outline_offset: Option<f32>,
+    pub divide_x: Option<f32>,
+    pub divide_y: Option<f32>,
+    pub divide_color: Option<Color>,
+    pub border_collapse: Option<BorderCollapse>,
+
+    // ---- Background ----
+    pub bg_repeat: Option<BackgroundRepeat>,
+    pub bg_size: Option<BackgroundSize>,
+    pub bg_attachment: Option<BackgroundAttachment>,
+    pub bg_clip: Option<BackgroundClip>,
 
     // ---- Ring ----
     pub ring_width: Option<f32>,
@@ -169,6 +296,19 @@ pub struct Style {
     pub line_height: Option<f32>,
     pub letter_spacing: Option<f32>,
     pub text_indent: Option<f32>,
+    pub whitespace: Option<Whitespace>,
+    pub word_break: Option<WordBreak>,
+    pub text_ellipsis: Option<TextEllipsis>,
+    pub line_clamp: Option<u32>,
+    pub decoration_color: Option<Color>,
+    pub decoration_thickness: Option<f32>,
+    pub underline_offset: Option<f32>,
+    pub list_style_type: Option<ListStyleType>,
+    pub list_style_position: Option<ListStylePosition>,
+    pub selection_color: Option<Color>,
+    pub accent_color: Option<Color>,
+    pub caret_color: Option<Color>,
+    pub placeholder_color: Option<Color>,
 
     // ---- Spacing ----
     pub padding: Option<Gaps>,
@@ -181,20 +321,24 @@ pub struct Style {
     pub min_height: Option<Size>,
     pub max_width: Option<Size>,
     pub max_height: Option<Size>,
+    pub aspect_ratio: Option<f32>,
+    pub table_layout: Option<TableLayout>,
+    pub columns: Option<u32>,
+    pub container: Option<bool>,
 
     // ---- Positioning ----
-    // **Fix**: position sides are `Option<f32>` and merged into `PositionSides`
-    // when a `Position` variant is applied.
     pub position: Option<Position>,
     pub top: Option<f32>,
     pub right: Option<f32>,
     pub bottom: Option<f32>,
     pub left: Option<f32>,
     pub z_index: Option<i32>,
+    pub order: Option<i32>,
 
     // ---- Overflow ----
-    // **Fix**: `Overflow` has only `None` and `Clip`.
     pub overflow: Option<Overflow>,
+    pub overflow_x: Option<Overflow>,
+    pub overflow_y: Option<Overflow>,
 
     // ---- Flex ----
     pub direction: Option<Direction>,
@@ -202,18 +346,20 @@ pub struct Style {
     pub cross_align: Option<Alignment>,
     pub align_self: Option<Alignment>,
     pub align_content: Option<Alignment>,
-
-    /// **Fix**: replaced `Option<Wrap>` with `Option<Content>` — Freya uses
-    /// `Content::Wrap { wrap_spacing }` for wrapping, and `Content::Flex`
-    /// for flex content mode.
     pub content: Option<Content>,
-
     pub spacing: Option<f32>,
     pub gap_x: Option<f32>,
     pub gap_y: Option<f32>,
+    pub space_x: Option<f32>,
+    pub space_y: Option<f32>,
 
     // ---- Effects ----
     pub opacity: Option<f32>,
+    pub visibility: Option<Visibility>,
+    pub user_select: Option<UserSelect>,
+    pub resize: Option<Resize>,
+    pub pointer_events: Option<bool>,
+    pub sr_only: Option<bool>,
 }
 
 impl Default for Style {
@@ -229,6 +375,17 @@ impl Default for Style {
             border_color: None,
             border_style: None,
             shadows: Vec::new(),
+            outline_width: None,
+            outline_color: None,
+            outline_offset: None,
+            divide_x: None,
+            divide_y: None,
+            divide_color: None,
+            border_collapse: None,
+            bg_repeat: None,
+            bg_size: None,
+            bg_attachment: None,
+            bg_clip: None,
             ring_width: None,
             ring_color: None,
             ring_offset: None,
@@ -243,6 +400,19 @@ impl Default for Style {
             line_height: None,
             letter_spacing: None,
             text_indent: None,
+            whitespace: None,
+            word_break: None,
+            text_ellipsis: None,
+            line_clamp: None,
+            decoration_color: None,
+            decoration_thickness: None,
+            underline_offset: None,
+            list_style_type: None,
+            list_style_position: None,
+            selection_color: None,
+            accent_color: None,
+            caret_color: None,
+            placeholder_color: None,
             padding: None,
             margin: None,
             width: None,
@@ -251,13 +421,20 @@ impl Default for Style {
             min_height: None,
             max_width: None,
             max_height: None,
+            aspect_ratio: None,
+            table_layout: None,
+            columns: None,
+            container: None,
             position: None,
             top: None,
             right: None,
             bottom: None,
             left: None,
             z_index: None,
+            order: None,
             overflow: None,
+            overflow_x: None,
+            overflow_y: None,
             direction: None,
             main_align: None,
             cross_align: None,
@@ -267,7 +444,14 @@ impl Default for Style {
             spacing: None,
             gap_x: None,
             gap_y: None,
+            space_x: None,
+            space_y: None,
             opacity: None,
+            visibility: None,
+            user_select: None,
+            resize: None,
+            pointer_events: None,
+            sr_only: None,
         }
     }
 }
@@ -288,13 +472,15 @@ impl Style {
                 self.border_right_width,
                 self.border_bottom_width,
                 self.border_left_width,
+                self.divide_y,
+                self.divide_x,
             ]
             .into_iter()
             .flatten()
             .reduce(f32::max)
         })?;
         let mut b = Border::default().width(width);
-        if let Some(colour) = self.border_color {
+        if let Some(colour) = self.border_color.or(self.divide_color) {
             b = b.fill(colour);
         }
         Some(b)
@@ -304,29 +490,6 @@ impl Style {
     // Merging
     // ==============================================================
 
-    /// Merge `other` into `self`, with **`other`'s set values winning**.
-    ///
-    /// This is the shape you want when layering styles: base + variant +
-    /// size, where each successive layer overrides what the previous one
-    /// set and leaves the rest alone.
-    ///
-    /// # Semantics
-    ///
-    /// * **Scalar fields** (`Option<T>`): `other.field.or(self.field)`.
-    ///   If `other` set the field, it wins. Otherwise `self`'s value stays.
-    /// * **Stack fields** (`shadows`, `font_families`): concatenated.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use freyacn::{Style, StyleExt};
-    /// let base = Style::default().p_4().bg_primary();
-    /// let variant = Style::default().p_6().bg_destructive();
-    ///
-    /// let merged = base.merge(variant);
-    /// // padding changed to 6·unit — variant won
-    /// // background changed to destructive — variant won
-    /// ```
     pub fn merge(self, other: Style) -> Style {
         let mut shadows = self.shadows;
         shadows.extend(other.shadows);
@@ -336,7 +499,6 @@ impl Style {
         Style {
             background: other.background.or(self.background),
             corner_radius: other.corner_radius.or(self.corner_radius),
-
             border_width: other.border_width.or(self.border_width),
             border_top_width: other.border_top_width.or(self.border_top_width),
             border_right_width: other.border_right_width.or(self.border_right_width),
@@ -345,6 +507,18 @@ impl Style {
             border_color: other.border_color.or(self.border_color),
             border_style: other.border_style.or(self.border_style),
             shadows,
+            outline_width: other.outline_width.or(self.outline_width),
+            outline_color: other.outline_color.or(self.outline_color),
+            outline_offset: other.outline_offset.or(self.outline_offset),
+            divide_x: other.divide_x.or(self.divide_x),
+            divide_y: other.divide_y.or(self.divide_y),
+            divide_color: other.divide_color.or(self.divide_color),
+            border_collapse: other.border_collapse.or(self.border_collapse),
+
+            bg_repeat: other.bg_repeat.or(self.bg_repeat),
+            bg_size: other.bg_size.or(self.bg_size),
+            bg_attachment: other.bg_attachment.or(self.bg_attachment),
+            bg_clip: other.bg_clip.or(self.bg_clip),
 
             ring_width: other.ring_width.or(self.ring_width),
             ring_color: other.ring_color.or(self.ring_color),
@@ -361,6 +535,19 @@ impl Style {
             line_height: other.line_height.or(self.line_height),
             letter_spacing: other.letter_spacing.or(self.letter_spacing),
             text_indent: other.text_indent.or(self.text_indent),
+            whitespace: other.whitespace.or(self.whitespace),
+            word_break: other.word_break.or(self.word_break),
+            text_ellipsis: other.text_ellipsis.or(self.text_ellipsis),
+            line_clamp: other.line_clamp.or(self.line_clamp),
+            decoration_color: other.decoration_color.or(self.decoration_color),
+            decoration_thickness: other.decoration_thickness.or(self.decoration_thickness),
+            underline_offset: other.underline_offset.or(self.underline_offset),
+            list_style_type: other.list_style_type.or(self.list_style_type),
+            list_style_position: other.list_style_position.or(self.list_style_position),
+            selection_color: other.selection_color.or(self.selection_color),
+            accent_color: other.accent_color.or(self.accent_color),
+            caret_color: other.caret_color.or(self.caret_color),
+            placeholder_color: other.placeholder_color.or(self.placeholder_color),
 
             padding: other.padding.or(self.padding),
             margin: other.margin.or(self.margin),
@@ -371,6 +558,10 @@ impl Style {
             min_height: other.min_height.or(self.min_height),
             max_width: other.max_width.or(self.max_width),
             max_height: other.max_height.or(self.max_height),
+            aspect_ratio: other.aspect_ratio.or(self.aspect_ratio),
+            table_layout: other.table_layout.or(self.table_layout),
+            columns: other.columns.or(self.columns),
+            container: other.container.or(self.container),
 
             position: other.position.or(self.position),
             top: other.top.or(self.top),
@@ -378,8 +569,11 @@ impl Style {
             bottom: other.bottom.or(self.bottom),
             left: other.left.or(self.left),
             z_index: other.z_index.or(self.z_index),
+            order: other.order.or(self.order),
 
             overflow: other.overflow.or(self.overflow),
+            overflow_x: other.overflow_x.or(self.overflow_x),
+            overflow_y: other.overflow_y.or(self.overflow_y),
 
             direction: other.direction.or(self.direction),
             main_align: other.main_align.or(self.main_align),
@@ -390,73 +584,36 @@ impl Style {
             spacing: other.spacing.or(self.spacing),
             gap_x: other.gap_x.or(self.gap_x),
             gap_y: other.gap_y.or(self.gap_y),
+            space_x: other.space_x.or(self.space_x),
+            space_y: other.space_y.or(self.space_y),
 
             opacity: other.opacity.or(self.opacity),
+            visibility: other.visibility.or(self.visibility),
+            user_select: other.user_select.or(self.user_select),
+            resize: other.resize.or(self.resize),
+            pointer_events: other.pointer_events.or(self.pointer_events),
+            sr_only: other.sr_only.or(self.sr_only),
         }
     }
 
-    /// Merge `defaults` into `self`, with **`self`'s set values winning**.
-    ///
-    /// The inverse of [`merge`](Self::merge). `defaults` only fills in
-    /// fields that `self` left unset.
-    ///
-    /// ```
-    /// # use freyacn::{Style, StyleExt};
-    /// let component_defaults = Style::default().text_sm().bg_background();
-    /// let user_override = Style::default().text_lg();
-    ///
-    /// let final_style = user_override.or(component_defaults);
-    /// // font_size = lg           — user won
-    /// // background = background  — default filled the gap
-    /// ```
     pub fn or(self, defaults: Style) -> Style {
         defaults.merge(self)
     }
 
-    /// In-place variant of [`merge`](Self::merge).
-    ///
-    /// ```ignore
-    /// let mut style = Style::default();
-    /// if hovered  { style.merge_from(hover_style); }
-    /// if disabled { style.merge_from(disabled_style); }
-    /// ```
     pub fn merge_from(&mut self, other: Style) {
         let taken = std::mem::take(self);
         *self = taken.merge(other);
     }
 
-    /// In-place variant of [`or`](Self::or).
     pub fn or_from(&mut self, defaults: Style) {
         let taken = std::mem::take(self);
         *self = taken.or(defaults);
     }
 
-    /// Returns `true` if no field has been set.
-    ///
-    /// ```
-    /// # use freyacn::{Style, StyleExt};
-    /// assert!(Style::default().is_empty());
-    /// assert!(!Style::default().p_4().is_empty());
-    /// ```
     pub fn is_empty(&self) -> bool {
         *self == Style::default()
     }
 
-    /// Parse a Tailwind-style string, returning both the styled value and
-    /// the list of unrecognised tokens.
-    ///
-    /// The regular `style(...)` method silently ignores unknown tokens.
-    /// `style_debug` gives you the same result plus the tokens that had no
-    /// effect, so you can warn or log during development.
-    ///
-    /// ```
-    /// # use freyacn::Style;
-    /// let (style, unknown) = Style::default().style_debug(
-    ///     "p-4 bg-primary shdaow-md not-a-thing",
-    /// );
-    /// // style has p-4 and bg-primary applied
-    /// // unknown contains "shdaow-md" and "not-a-thing"
-    /// ```
     pub fn style_debug(mut self, styles: impl AsRef<str>) -> (Self, Vec<String>) {
         let mut unknown = Vec::new();
         for token in styles.as_ref().split_whitespace() {
@@ -728,7 +885,7 @@ impl Style {
         self.font_weight(FontWeight::BLACK)
     }
 
-    // ---- Typography slant/family/align/decoration/transform ----
+    // ---- Typography slant / family / align / decoration / transform ----
     pub fn italic(self) -> Self {
         self.font_slant(FontSlant::Italic)
     }
@@ -981,42 +1138,29 @@ impl Style {
     pub fn flex_row(self) -> Self {
         self.direction(Direction::Horizontal)
     }
-
-    /// **Fix**: uses `Content::Wrap { wrap_spacing: None }` instead of a
-    /// non-existent `Wrap` enum.
     pub fn flex_wrap_content(self) -> Self {
         self.content(Content::Wrap { wrap_spacing: None })
     }
-
-    /// Wrap with a spacing between wrapped lines.
     pub fn flex_wrap_spacing(self, spacing: f32) -> Self {
         self.content(Content::Wrap {
             wrap_spacing: Some(spacing),
         })
     }
-
-    /// Set the content mode to flex.
     pub fn content_flex(self) -> Self {
         self.content(Content::Flex)
     }
-    /// Set the content mode to fit.
     pub fn content_fit(self) -> Self {
         self.content(Content::Fit)
     }
-    /// Set the content mode to normal (default).
     pub fn content_normal(self) -> Self {
         self.content(Content::Normal)
     }
-
-    /// `flex-1` — grow to fill available space.
     pub fn flex_1(self) -> Self {
         self.width(Size::flex(1.0)).height(Size::flex(1.0))
     }
-    /// `grow` — width grows to fill.
     pub fn grow(self) -> Self {
         self.width(Size::flex(1.0))
     }
-    /// `grow-0` — no growth.
     pub fn grow_0(self) -> Self {
         self.width(Size::px(0.0))
     }
@@ -1123,12 +1267,372 @@ impl Style {
         self.w_full().h_full()
     }
 
-    // ---- Positioning ----
-    //
-    // **Fix**: `Position::Stacked`, `Position::Absolute`, `Position::Global`
-    // all wrap `Box<PositionSides>`. The sides are merged from the
-    // `top/right/bottom/left` fields.
+    // ---- Aspect ratio ----
+    pub fn aspect(mut self, ratio: f32) -> Self {
+        self.aspect_ratio = Some(ratio);
+        self
+    }
+    pub fn aspect_square(self) -> Self {
+        self.aspect(1.0)
+    }
+    pub fn aspect_video(self) -> Self {
+        self.aspect(16.0 / 9.0)
+    }
+    pub fn aspect_auto(mut self) -> Self {
+        self.aspect_ratio = None;
+        self
+    }
 
+    // ---- Display / visibility ----
+    pub fn hidden(self) -> Self {
+        self.visibility(Visibility::Collapse)
+    }
+    pub fn visible(self) -> Self {
+        self.visibility(Visibility::Visible)
+    }
+    pub fn invisible(self) -> Self {
+        self.visibility(Visibility::Hidden)
+    }
+    pub fn visibility(mut self, v: Visibility) -> Self {
+        self.visibility = Some(v);
+        self
+    }
+    pub fn sr_only(mut self) -> Self {
+        self.sr_only = Some(true);
+        self.w(1.0).h(1.0).overflow_clip()
+    }
+    pub fn not_sr_only(mut self) -> Self {
+        self.sr_only = Some(false);
+        self.w_auto().h_auto().overflow_none()
+    }
+
+    // ---- Order ----
+    pub fn order(mut self, n: i32) -> Self {
+        self.order = Some(n);
+        self
+    }
+    pub fn order_first(self) -> Self {
+        self.order(-9_999)
+    }
+    pub fn order_last(self) -> Self {
+        self.order(9_999)
+    }
+    pub fn order_none(mut self) -> Self {
+        self.order = None;
+        self
+    }
+
+    // ---- Pointer / user-select / resize ----
+    pub fn pointer_events_none(mut self) -> Self {
+        self.pointer_events = Some(false);
+        self
+    }
+    pub fn pointer_events_auto(mut self) -> Self {
+        self.pointer_events = Some(true);
+        self
+    }
+    pub fn select_none(mut self) -> Self {
+        self.user_select = Some(UserSelect::None);
+        self
+    }
+    pub fn select_text(mut self) -> Self {
+        self.user_select = Some(UserSelect::Text);
+        self
+    }
+    pub fn select_all(mut self) -> Self {
+        self.user_select = Some(UserSelect::All);
+        self
+    }
+    pub fn select_auto(mut self) -> Self {
+        self.user_select = Some(UserSelect::Auto);
+        self
+    }
+    pub fn resize(mut self) -> Self {
+        self.resize = Some(Resize::Both);
+        self
+    }
+    pub fn resize_none(mut self) -> Self {
+        self.resize = Some(Resize::None);
+        self
+    }
+    pub fn resize_x(mut self) -> Self {
+        self.resize = Some(Resize::Horizontal);
+        self
+    }
+    pub fn resize_y(mut self) -> Self {
+        self.resize = Some(Resize::Vertical);
+        self
+    }
+
+    // ---- Whitespace / word-break / text-overflow ----
+    pub fn whitespace(mut self, w: Whitespace) -> Self {
+        self.whitespace = Some(w);
+        self
+    }
+    pub fn whitespace_normal(self) -> Self {
+        self.whitespace(Whitespace::Normal)
+    }
+    pub fn whitespace_nowrap(self) -> Self {
+        self.whitespace(Whitespace::Nowrap)
+    }
+    pub fn whitespace_pre(self) -> Self {
+        self.whitespace(Whitespace::Pre)
+    }
+    pub fn whitespace_pre_line(self) -> Self {
+        self.whitespace(Whitespace::PreLine)
+    }
+    pub fn whitespace_pre_wrap(self) -> Self {
+        self.whitespace(Whitespace::PreWrap)
+    }
+    pub fn whitespace_break_spaces(self) -> Self {
+        self.whitespace(Whitespace::BreakSpaces)
+    }
+
+    pub fn word_break(mut self, w: WordBreak) -> Self {
+        self.word_break = Some(w);
+        self
+    }
+    pub fn break_normal(self) -> Self {
+        self.word_break(WordBreak::Normal)
+    }
+    pub fn break_words(self) -> Self {
+        self.word_break(WordBreak::Words)
+    }
+    pub fn break_all(self) -> Self {
+        self.word_break(WordBreak::All)
+    }
+    pub fn break_keep(self) -> Self {
+        self.word_break(WordBreak::Keep)
+    }
+
+    pub fn text_ellipsis(mut self, e: TextEllipsis) -> Self {
+        self.text_ellipsis = Some(e);
+        self
+    }
+    pub fn text_clip(self) -> Self {
+        self.text_ellipsis(TextEllipsis::Clip)
+    }
+    pub fn text_ellipsis_set(self) -> Self {
+        self.text_ellipsis(TextEllipsis::Ellipsis)
+    }
+
+    pub fn line_clamp(mut self, n: u32) -> Self {
+        self.line_clamp = Some(n);
+        self
+    }
+
+    // ---- Text decoration extras ----
+    pub fn decoration_color(mut self, c: Color) -> Self {
+        self.decoration_color = Some(c);
+        self
+    }
+    pub fn decoration_thickness(mut self, px: f32) -> Self {
+        self.decoration_thickness = Some(px);
+        self
+    }
+    pub fn decoration_from_font(self) -> Self {
+        self
+    }
+    pub fn underline_offset(mut self, px: f32) -> Self {
+        self.underline_offset = Some(px);
+        self
+    }
+
+    // ---- List style ----
+    pub fn list_style_type(mut self, t: ListStyleType) -> Self {
+        self.list_style_type = Some(t);
+        self
+    }
+    pub fn list_none(self) -> Self {
+        self.list_style_type(ListStyleType::None)
+    }
+    pub fn list_disc(self) -> Self {
+        self.list_style_type(ListStyleType::Disc)
+    }
+    pub fn list_decimal(self) -> Self {
+        self.list_style_type(ListStyleType::Decimal)
+    }
+    pub fn list_inside(mut self) -> Self {
+        self.list_style_position = Some(ListStylePosition::Inside);
+        self
+    }
+    pub fn list_outside(mut self) -> Self {
+        self.list_style_position = Some(ListStylePosition::Outside);
+        self
+    }
+
+    // ---- Accent / caret / selection ----
+    pub fn accent_color(mut self, c: Color) -> Self {
+        self.accent_color = Some(c);
+        self
+    }
+    pub fn caret_color(mut self, c: Color) -> Self {
+        self.caret_color = Some(c);
+        self
+    }
+    pub fn selection_color(mut self, c: Color) -> Self {
+        self.selection_color = Some(c);
+        self
+    }
+    pub fn placeholder_color(mut self, c: Color) -> Self {
+        self.placeholder_color = Some(c);
+        self
+    }
+
+    // ---- Background extras ----
+    pub fn bg_repeat(mut self, r: BackgroundRepeat) -> Self {
+        self.bg_repeat = Some(r);
+        self
+    }
+    pub fn bg_repeat_1(self) -> Self {
+        self.bg_repeat(BackgroundRepeat::Repeat)
+    }
+    pub fn bg_no_repeat(self) -> Self {
+        self.bg_repeat(BackgroundRepeat::NoRepeat)
+    }
+    pub fn bg_repeat_x(self) -> Self {
+        self.bg_repeat(BackgroundRepeat::RepeatX)
+    }
+    pub fn bg_repeat_y(self) -> Self {
+        self.bg_repeat(BackgroundRepeat::RepeatY)
+    }
+    pub fn bg_size(mut self, s: BackgroundSize) -> Self {
+        self.bg_size = Some(s);
+        self
+    }
+    pub fn bg_auto(self) -> Self {
+        self.bg_size(BackgroundSize::Auto)
+    }
+    pub fn bg_cover(self) -> Self {
+        self.bg_size(BackgroundSize::Cover)
+    }
+    pub fn bg_contain(self) -> Self {
+        self.bg_size(BackgroundSize::Contain)
+    }
+    pub fn bg_fixed(mut self) -> Self {
+        self.bg_attachment = Some(BackgroundAttachment::Fixed);
+        self
+    }
+    pub fn bg_local(mut self) -> Self {
+        self.bg_attachment = Some(BackgroundAttachment::Local);
+        self
+    }
+    pub fn bg_scroll(mut self) -> Self {
+        self.bg_attachment = Some(BackgroundAttachment::Scroll);
+        self
+    }
+    pub fn bg_clip(mut self, c: BackgroundClip) -> Self {
+        self.bg_clip = Some(c);
+        self
+    }
+    pub fn bg_clip_border(self) -> Self {
+        self.bg_clip(BackgroundClip::Border)
+    }
+    pub fn bg_clip_padding(self) -> Self {
+        self.bg_clip(BackgroundClip::Padding)
+    }
+    pub fn bg_clip_content(self) -> Self {
+        self.bg_clip(BackgroundClip::Content)
+    }
+    pub fn bg_clip_text(self) -> Self {
+        self.bg_clip(BackgroundClip::Text)
+    }
+
+    // ---- Divide ----
+    pub fn divide_x(mut self, px: f32) -> Self {
+        self.divide_x = Some(px);
+        self
+    }
+    pub fn divide_y(mut self, px: f32) -> Self {
+        self.divide_y = Some(px);
+        self
+    }
+    pub fn divide_color(mut self, c: Color) -> Self {
+        self.divide_color = Some(c);
+        self
+    }
+
+    // ---- Outline ----
+    pub fn outline_width(mut self, px: f32) -> Self {
+        self.outline_width = Some(px);
+        self
+    }
+    pub fn outline_color(mut self, c: Color) -> Self {
+        self.outline_color = Some(c);
+        self
+    }
+    pub fn outline_offset(mut self, px: f32) -> Self {
+        self.outline_offset = Some(px);
+        self
+    }
+    pub fn outline_none(mut self) -> Self {
+        self.outline_width = Some(0.0);
+        self
+    }
+
+    // ---- Space ----
+    pub fn space_x(mut self, px: f32) -> Self {
+        self.space_x = Some(px);
+        self
+    }
+    pub fn space_y(mut self, px: f32) -> Self {
+        self.space_y = Some(px);
+        self
+    }
+
+    // ---- Overflow per-axis ----
+    pub fn overflow_x(mut self, o: Overflow) -> Self {
+        self.overflow_x = Some(o);
+        self
+    }
+    pub fn overflow_y(mut self, o: Overflow) -> Self {
+        self.overflow_y = Some(o);
+        self
+    }
+    pub fn overflow_x_clip(self) -> Self {
+        self.overflow_x(Overflow::Clip)
+    }
+    pub fn overflow_y_clip(self) -> Self {
+        self.overflow_y(Overflow::Clip)
+    }
+    pub fn overflow_x_none(self) -> Self {
+        self.overflow_x(Overflow::None)
+    }
+    pub fn overflow_y_none(self) -> Self {
+        self.overflow_y(Overflow::None)
+    }
+
+    // ---- Table ----
+    pub fn table_layout(mut self, t: TableLayout) -> Self {
+        self.table_layout = Some(t);
+        self
+    }
+    pub fn table_auto(self) -> Self {
+        self.table_layout(TableLayout::Auto)
+    }
+    pub fn table_fixed(self) -> Self {
+        self.table_layout(TableLayout::Fixed)
+    }
+    pub fn border_collapse(mut self) -> Self {
+        self.border_collapse = Some(BorderCollapse::Collapse);
+        self
+    }
+    pub fn border_separate(mut self) -> Self {
+        self.border_collapse = Some(BorderCollapse::Separate);
+        self
+    }
+
+    // ---- Columns / container ----
+    pub fn columns(mut self, n: u32) -> Self {
+        self.columns = Some(n);
+        self
+    }
+    pub fn container(mut self) -> Self {
+        self.container = Some(true);
+        self
+    }
+
+    // ---- Positioning ----
     fn merge_sides(&self) -> PositionSides {
         PositionSides {
             top: self.top,
@@ -1138,21 +1642,16 @@ impl Style {
         }
     }
 
-    /// Stacked positioning (Freya's default — the closest to CSS `relative`).
     pub fn relative(mut self) -> Self {
         let sides = self.merge_sides();
         self.position = Some(Position::Stacked(Box::new(sides)));
         self
     }
-
-    /// Absolute positioning relative to the nearest positioned ancestor.
     pub fn absolute(mut self) -> Self {
         let sides = self.merge_sides();
         self.position = Some(Position::Absolute(Box::new(sides)));
         self
     }
-
-    /// Global positioning — relative to the window.
     pub fn global(mut self) -> Self {
         let sides = self.merge_sides();
         self.position = Some(Position::Global(Box::new(sides)));
@@ -1195,8 +1694,6 @@ impl Style {
     }
 
     // ---- Overflow ----
-    //
-    // **Fix**: `Overflow` has only `None` and `Clip`.
     pub fn overflow_none(self) -> Self {
         self.overflow(Overflow::None)
     }
@@ -1382,9 +1879,6 @@ impl Style {
     );
 
     // ---- Spacing / sizing scale ----
-    //
-    // **Fix**: pairs of `(identifier, value)` — `0_5` → `0.5`, etc.
-
     style_spacing_scale!(
         gap,
         gap,
@@ -1423,7 +1917,6 @@ impl Style {
         (80, 80.0),
         (96, 96.0)
     );
-
     style_spacing_scale!(
         p,
         p,
@@ -1690,7 +2183,6 @@ impl Style {
         (80, 80.0),
         (96, 96.0)
     );
-
     style_spacing_scale!(
         m,
         m,
@@ -1957,7 +2449,6 @@ impl Style {
         (80, 80.0),
         (96, 96.0)
     );
-
     style_spacing_scale!(
         w,
         w,
@@ -2424,7 +2915,7 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.font_black_weight())
     }
 
-    // Typography slant/family/align/decoration/transform
+    // Typography slant / family / align / decoration / transform
     fn italic(self) -> Self {
         self.map_style(|s| s.italic())
     }
@@ -2753,6 +3244,315 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.size_full())
     }
 
+    // Aspect ratio
+    fn aspect(self, ratio: f32) -> Self {
+        self.map_style(|s| s.aspect(ratio))
+    }
+    fn aspect_square(self) -> Self {
+        self.map_style(|s| s.aspect_square())
+    }
+    fn aspect_video(self) -> Self {
+        self.map_style(|s| s.aspect_video())
+    }
+    fn aspect_auto(self) -> Self {
+        self.map_style(|s| s.aspect_auto())
+    }
+
+    // Display / visibility
+    fn hidden(self) -> Self {
+        self.map_style(|s| s.hidden())
+    }
+    fn visible(self) -> Self {
+        self.map_style(|s| s.visible())
+    }
+    fn invisible(self) -> Self {
+        self.map_style(|s| s.invisible())
+    }
+    fn visibility(self, v: Visibility) -> Self {
+        self.map_style(|s| s.visibility(v))
+    }
+    fn sr_only(self) -> Self {
+        self.map_style(|s| s.sr_only())
+    }
+    fn not_sr_only(self) -> Self {
+        self.map_style(|s| s.not_sr_only())
+    }
+
+    // Order
+    fn order(self, n: i32) -> Self {
+        self.map_style(|s| s.order(n))
+    }
+    fn order_first(self) -> Self {
+        self.map_style(|s| s.order_first())
+    }
+    fn order_last(self) -> Self {
+        self.map_style(|s| s.order_last())
+    }
+    fn order_none(self) -> Self {
+        self.map_style(|s| s.order_none())
+    }
+
+    // Pointer / user-select / resize
+    fn pointer_events_none(self) -> Self {
+        self.map_style(|s| s.pointer_events_none())
+    }
+    fn pointer_events_auto(self) -> Self {
+        self.map_style(|s| s.pointer_events_auto())
+    }
+    fn select_none(self) -> Self {
+        self.map_style(|s| s.select_none())
+    }
+    fn select_text(self) -> Self {
+        self.map_style(|s| s.select_text())
+    }
+    fn select_all(self) -> Self {
+        self.map_style(|s| s.select_all())
+    }
+    fn select_auto(self) -> Self {
+        self.map_style(|s| s.select_auto())
+    }
+    fn resize(self) -> Self {
+        self.map_style(|s| s.resize())
+    }
+    fn resize_none(self) -> Self {
+        self.map_style(|s| s.resize_none())
+    }
+    fn resize_x(self) -> Self {
+        self.map_style(|s| s.resize_x())
+    }
+    fn resize_y(self) -> Self {
+        self.map_style(|s| s.resize_y())
+    }
+
+    // Whitespace / word-break / text-overflow
+    fn whitespace(self, w: Whitespace) -> Self {
+        self.map_style(|s| s.whitespace(w))
+    }
+    fn whitespace_normal(self) -> Self {
+        self.map_style(|s| s.whitespace_normal())
+    }
+    fn whitespace_nowrap(self) -> Self {
+        self.map_style(|s| s.whitespace_nowrap())
+    }
+    fn whitespace_pre(self) -> Self {
+        self.map_style(|s| s.whitespace_pre())
+    }
+    fn whitespace_pre_line(self) -> Self {
+        self.map_style(|s| s.whitespace_pre_line())
+    }
+    fn whitespace_pre_wrap(self) -> Self {
+        self.map_style(|s| s.whitespace_pre_wrap())
+    }
+    fn whitespace_break_spaces(self) -> Self {
+        self.map_style(|s| s.whitespace_break_spaces())
+    }
+    fn word_break(self, w: WordBreak) -> Self {
+        self.map_style(|s| s.word_break(w))
+    }
+    fn break_normal(self) -> Self {
+        self.map_style(|s| s.break_normal())
+    }
+    fn break_words(self) -> Self {
+        self.map_style(|s| s.break_words())
+    }
+    fn break_all(self) -> Self {
+        self.map_style(|s| s.break_all())
+    }
+    fn break_keep(self) -> Self {
+        self.map_style(|s| s.break_keep())
+    }
+    fn text_ellipsis(self, e: TextEllipsis) -> Self {
+        self.map_style(|s| s.text_ellipsis(e))
+    }
+    fn text_clip(self) -> Self {
+        self.map_style(|s| s.text_clip())
+    }
+    fn text_ellipsis_set(self) -> Self {
+        self.map_style(|s| s.text_ellipsis_set())
+    }
+    fn line_clamp(self, n: u32) -> Self {
+        self.map_style(|s| s.line_clamp(n))
+    }
+
+    // Text decoration extras
+    fn decoration_color(self, c: Color) -> Self {
+        self.map_style(|s| s.decoration_color(c))
+    }
+    fn decoration_thickness(self, px: f32) -> Self {
+        self.map_style(|s| s.decoration_thickness(px))
+    }
+    fn decoration_from_font(self) -> Self {
+        self.map_style(|s| s.decoration_from_font())
+    }
+    fn underline_offset(self, px: f32) -> Self {
+        self.map_style(|s| s.underline_offset(px))
+    }
+
+    // List style
+    fn list_style_type(self, t: ListStyleType) -> Self {
+        self.map_style(|s| s.list_style_type(t))
+    }
+    fn list_none(self) -> Self {
+        self.map_style(|s| s.list_none())
+    }
+    fn list_disc(self) -> Self {
+        self.map_style(|s| s.list_disc())
+    }
+    fn list_decimal(self) -> Self {
+        self.map_style(|s| s.list_decimal())
+    }
+    fn list_inside(self) -> Self {
+        self.map_style(|s| s.list_inside())
+    }
+    fn list_outside(self) -> Self {
+        self.map_style(|s| s.list_outside())
+    }
+
+    // Accent / caret / selection
+    fn accent_color(self, c: Color) -> Self {
+        self.map_style(|s| s.accent_color(c))
+    }
+    fn caret_color(self, c: Color) -> Self {
+        self.map_style(|s| s.caret_color(c))
+    }
+    fn selection_color(self, c: Color) -> Self {
+        self.map_style(|s| s.selection_color(c))
+    }
+    fn placeholder_color(self, c: Color) -> Self {
+        self.map_style(|s| s.placeholder_color(c))
+    }
+
+    // Background extras
+    fn bg_repeat(self, r: BackgroundRepeat) -> Self {
+        self.map_style(|s| s.bg_repeat(r))
+    }
+    fn bg_repeat_1(self) -> Self {
+        self.map_style(|s| s.bg_repeat_1())
+    }
+    fn bg_no_repeat(self) -> Self {
+        self.map_style(|s| s.bg_no_repeat())
+    }
+    fn bg_repeat_x(self) -> Self {
+        self.map_style(|s| s.bg_repeat_x())
+    }
+    fn bg_repeat_y(self) -> Self {
+        self.map_style(|s| s.bg_repeat_y())
+    }
+    fn bg_size(self, s: BackgroundSize) -> Self {
+        self.map_style(|st| st.bg_size(s))
+    }
+    fn bg_auto(self) -> Self {
+        self.map_style(|s| s.bg_auto())
+    }
+    fn bg_cover(self) -> Self {
+        self.map_style(|s| s.bg_cover())
+    }
+    fn bg_contain(self) -> Self {
+        self.map_style(|s| s.bg_contain())
+    }
+    fn bg_fixed(self) -> Self {
+        self.map_style(|s| s.bg_fixed())
+    }
+    fn bg_local(self) -> Self {
+        self.map_style(|s| s.bg_local())
+    }
+    fn bg_scroll(self) -> Self {
+        self.map_style(|s| s.bg_scroll())
+    }
+    fn bg_clip(self, c: BackgroundClip) -> Self {
+        self.map_style(|s| s.bg_clip(c))
+    }
+    fn bg_clip_border(self) -> Self {
+        self.map_style(|s| s.bg_clip_border())
+    }
+    fn bg_clip_padding(self) -> Self {
+        self.map_style(|s| s.bg_clip_padding())
+    }
+    fn bg_clip_content(self) -> Self {
+        self.map_style(|s| s.bg_clip_content())
+    }
+    fn bg_clip_text(self) -> Self {
+        self.map_style(|s| s.bg_clip_text())
+    }
+
+    // Divide
+    fn divide_x(self, px: f32) -> Self {
+        self.map_style(|s| s.divide_x(px))
+    }
+    fn divide_y(self, px: f32) -> Self {
+        self.map_style(|s| s.divide_y(px))
+    }
+    fn divide_color(self, c: Color) -> Self {
+        self.map_style(|s| s.divide_color(c))
+    }
+
+    // Outline
+    fn outline_width(self, px: f32) -> Self {
+        self.map_style(|s| s.outline_width(px))
+    }
+    fn outline_color(self, c: Color) -> Self {
+        self.map_style(|s| s.outline_color(c))
+    }
+    fn outline_offset(self, px: f32) -> Self {
+        self.map_style(|s| s.outline_offset(px))
+    }
+    fn outline_none(self) -> Self {
+        self.map_style(|s| s.outline_none())
+    }
+
+    // Space
+    fn space_x(self, px: f32) -> Self {
+        self.map_style(|s| s.space_x(px))
+    }
+    fn space_y(self, px: f32) -> Self {
+        self.map_style(|s| s.space_y(px))
+    }
+
+    // Overflow per-axis
+    fn overflow_x(self, o: Overflow) -> Self {
+        self.map_style(|s| s.overflow_x(o))
+    }
+    fn overflow_y(self, o: Overflow) -> Self {
+        self.map_style(|s| s.overflow_y(o))
+    }
+    fn overflow_x_clip(self) -> Self {
+        self.map_style(|s| s.overflow_x_clip())
+    }
+    fn overflow_y_clip(self) -> Self {
+        self.map_style(|s| s.overflow_y_clip())
+    }
+    fn overflow_x_none(self) -> Self {
+        self.map_style(|s| s.overflow_x_none())
+    }
+    fn overflow_y_none(self) -> Self {
+        self.map_style(|s| s.overflow_y_none())
+    }
+
+    // Table
+    fn table_layout(self, t: TableLayout) -> Self {
+        self.map_style(|s| s.table_layout(t))
+    }
+    fn table_auto(self) -> Self {
+        self.map_style(|s| s.table_auto())
+    }
+    fn table_fixed(self) -> Self {
+        self.map_style(|s| s.table_fixed())
+    }
+    fn border_collapse(self) -> Self {
+        self.map_style(|s| s.border_collapse())
+    }
+    fn border_separate(self) -> Self {
+        self.map_style(|s| s.border_separate())
+    }
+
+    // Columns / container
+    fn columns(self, n: u32) -> Self {
+        self.map_style(|s| s.columns(n))
+    }
+    fn container(self) -> Self {
+        self.map_style(|s| s.container())
+    }
+
     // Positioning
     fn relative(self) -> Self {
         self.map_style(|s| s.relative())
@@ -2785,7 +3585,7 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.inset_y(value))
     }
 
-    // Overflow — **Fix**: only `None` and `Clip` exist.
+    // Overflow
     fn overflow_none(self) -> Self {
         self.map_style(|s| s.overflow_none())
     }
@@ -2837,21 +3637,10 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.ml(size))
     }
 
-    // ==========================================================
     // Merging
-    // ==========================================================
-
-    /// Merge `other` into this value's style, with **`other` winning**.
-    ///
-    /// Equivalent to `self.map_style(|s| s.merge(other))`. Works uniformly
-    /// on `Style` and on any component implementing `StyleExt`.
     fn merge_style(self, other: Style) -> Self {
         self.map_style(|s| s.merge(other))
     }
-
-    /// Merge `defaults` into this value's style, with **`self` winning**.
-    ///
-    /// Equivalent to `self.map_style(|s| s.or(defaults))`.
     fn or_style(self, defaults: Style) -> Self {
         self.map_style(|s| s.or(defaults))
     }
@@ -4098,14 +4887,6 @@ fn palette_colour(family: &str, shade: &str) -> Option<Color> {
     }
 }
 
-/// Returns `true` if `token` looks like a class the parser recognises.
-///
-/// Checks the token against the fixed keyword set and the prefix list the
-/// `style_token` dispatcher handles. Does **not** verify that the value
-/// after the prefix is valid — `bg-invalid-999` reports as known because
-/// the `bg-` prefix is recognised.
-///
-/// Used by [`Style::style_debug`].
 fn is_known_token(token: &str) -> bool {
     const KEYWORDS: &[&str] = &[
         "italic",
@@ -4137,6 +4918,68 @@ fn is_known_token(token: &str) -> bool {
         "border",
         "rounded",
         "ring",
+        "block",
+        "inline-block",
+        "flex",
+        "hidden",
+        "visible",
+        "invisible",
+        "sr-only",
+        "not-sr-only",
+        "pointer-events-none",
+        "pointer-events-auto",
+        "select-none",
+        "select-text",
+        "select-all",
+        "select-auto",
+        "resize",
+        "resize-none",
+        "resize-x",
+        "resize-y",
+        "whitespace-normal",
+        "whitespace-nowrap",
+        "whitespace-pre",
+        "whitespace-pre-line",
+        "whitespace-pre-wrap",
+        "whitespace-break-spaces",
+        "break-normal",
+        "break-words",
+        "break-all",
+        "break-keep",
+        "text-ellipsis",
+        "text-clip",
+        "truncate",
+        "list-none",
+        "list-disc",
+        "list-decimal",
+        "list-inside",
+        "list-outside",
+        "table-auto",
+        "table-fixed",
+        "border-collapse",
+        "border-separate",
+        "bg-repeat",
+        "bg-no-repeat",
+        "bg-repeat-x",
+        "bg-repeat-y",
+        "bg-auto",
+        "bg-cover",
+        "bg-contain",
+        "bg-fixed",
+        "bg-local",
+        "bg-scroll",
+        "bg-clip-border",
+        "bg-clip-padding",
+        "bg-clip-content",
+        "bg-clip-text",
+        "outline-none",
+        "aspect-square",
+        "aspect-video",
+        "aspect-auto",
+        "order-first",
+        "order-last",
+        "order-none",
+        "container",
     ];
 
     const PREFIXES: &[&str] = &[
@@ -4175,6 +5018,24 @@ fn is_known_token(token: &str) -> bool {
         "m-",
         "w-",
         "h-",
+        "order-",
+        "aspect-",
+        "columns-",
+        "space-x-",
+        "space-y-",
+        "divide-x-",
+        "divide-y-",
+        "divide-",
+        "outline-offset-",
+        "outline-",
+        "accent-",
+        "caret-",
+        "decoration-",
+        "underline-offset-",
+        "line-clamp-",
+        "overflow-x-",
+        "overflow-y-",
+        "ring-offset-",
     ];
 
     KEYWORDS.contains(&token) || PREFIXES.iter().any(|p| token.starts_with(p))
@@ -4194,9 +5055,6 @@ fn parse_len(s: &str) -> Option<f32> {
     s.parse::<f32>().ok()
 }
 
-/// **Fix**: `$name` is the identifier fragment (e.g. `0_5`), and
-/// `stringify!($name).replace('_', ".")` produces the Tailwind token
-/// (`"0.5"`).
 macro_rules! style_scale_dispatch {
     ($this:expr, $rest:expr, $prefix:ident; $($name:literal),* $(,)?) => {
         paste! {
@@ -4240,7 +5098,124 @@ fn style_token<T: StyleExt>(this: T, token: &str) -> T {
         "border" => return this.border(),
         "rounded" => return this.rounded(),
         "ring" => return this.ring(),
+        "block" => return this.content_normal(),
+        "inline-block" => return this.content_fit(),
+        "flex" => return this.content_flex(),
+        "hidden" => return this.hidden(),
+        "visible" => return this.visible(),
+        "invisible" => return this.invisible(),
+        "sr-only" => return this.sr_only(),
+        "not-sr-only" => return this.not_sr_only(),
+        "pointer-events-none" => return this.pointer_events_none(),
+        "pointer-events-auto" => return this.pointer_events_auto(),
+        "select-none" => return this.select_none(),
+        "select-text" => return this.select_text(),
+        "select-all" => return this.select_all(),
+        "select-auto" => return this.select_auto(),
+        "resize" => return this.resize(),
+        "resize-none" => return this.resize_none(),
+        "resize-x" => return this.resize_x(),
+        "resize-y" => return this.resize_y(),
+        "whitespace-normal" => return this.whitespace_normal(),
+        "whitespace-nowrap" => return this.whitespace_nowrap(),
+        "whitespace-pre" => return this.whitespace_pre(),
+        "whitespace-pre-line" => return this.whitespace_pre_line(),
+        "whitespace-pre-wrap" => return this.whitespace_pre_wrap(),
+        "whitespace-break-spaces" => return this.whitespace_break_spaces(),
+        "break-normal" => return this.break_normal(),
+        "break-words" => return this.break_words(),
+        "break-all" => return this.break_all(),
+        "break-keep" => return this.break_keep(),
+        "text-ellipsis" => return this.text_ellipsis_set(),
+        "text-clip" => return this.text_clip(),
+        "truncate" => return this.text_ellipsis_set().whitespace_nowrap().overflow_clip(),
+        "list-none" => return this.list_none(),
+        "list-disc" => return this.list_disc(),
+        "list-decimal" => return this.list_decimal(),
+        "list-inside" => return this.list_inside(),
+        "list-outside" => return this.list_outside(),
+        "table-auto" => return this.table_auto(),
+        "table-fixed" => return this.table_fixed(),
+        "border-collapse" => return this.border_collapse(),
+        "border-separate" => return this.border_separate(),
+        "bg-repeat" => return this.bg_repeat_1(),
+        "bg-no-repeat" => return this.bg_no_repeat(),
+        "bg-repeat-x" => return this.bg_repeat_x(),
+        "bg-repeat-y" => return this.bg_repeat_y(),
+        "bg-auto" => return this.bg_auto(),
+        "bg-cover" => return this.bg_cover(),
+        "bg-contain" => return this.bg_contain(),
+        "bg-fixed" => return this.bg_fixed(),
+        "bg-local" => return this.bg_local(),
+        "bg-scroll" => return this.bg_scroll(),
+        "bg-clip-border" => return this.bg_clip_border(),
+        "bg-clip-padding" => return this.bg_clip_padding(),
+        "bg-clip-content" => return this.bg_clip_content(),
+        "bg-clip-text" => return this.bg_clip_text(),
+        "outline-none" => return this.outline_none(),
+        "aspect-square" => return this.aspect_square(),
+        "aspect-video" => return this.aspect_video(),
+        "aspect-auto" => return this.aspect_auto(),
+        "order-first" => return this.order_first(),
+        "order-last" => return this.order_last(),
+        "order-none" => return this.order_none(),
+        "container" => return this.container(),
         _ => {}
+    }
+
+    if let Some(r) = token.strip_prefix("order-") {
+        return style_order(this, r);
+    }
+    if let Some(r) = token.strip_prefix("aspect-") {
+        return style_aspect(this, r);
+    }
+    if let Some(r) = token.strip_prefix("columns-") {
+        return style_columns(this, r);
+    }
+    if let Some(r) = token.strip_prefix("space-x-") {
+        return style_space_x(this, r);
+    }
+    if let Some(r) = token.strip_prefix("space-y-") {
+        return style_space_y(this, r);
+    }
+    if let Some(r) = token.strip_prefix("divide-x-") {
+        return style_divide_x(this, r);
+    }
+    if let Some(r) = token.strip_prefix("divide-y-") {
+        return style_divide_y(this, r);
+    }
+    if let Some(r) = token.strip_prefix("divide-") {
+        return style_divide_colour(this, r);
+    }
+    if let Some(r) = token.strip_prefix("outline-offset-") {
+        return style_outline_offset(this, r);
+    }
+    if let Some(r) = token.strip_prefix("outline-") {
+        return style_outline(this, r);
+    }
+    if let Some(r) = token.strip_prefix("accent-") {
+        return style_accent(this, r);
+    }
+    if let Some(r) = token.strip_prefix("caret-") {
+        return style_caret(this, r);
+    }
+    if let Some(r) = token.strip_prefix("decoration-") {
+        return style_decoration(this, r);
+    }
+    if let Some(r) = token.strip_prefix("underline-offset-") {
+        return style_underline_offset(this, r);
+    }
+    if let Some(r) = token.strip_prefix("line-clamp-") {
+        return style_line_clamp(this, r);
+    }
+    if let Some(r) = token.strip_prefix("overflow-x-") {
+        return style_overflow_x(this, r);
+    }
+    if let Some(r) = token.strip_prefix("overflow-y-") {
+        return style_overflow_y(this, r);
+    }
+    if let Some(r) = token.strip_prefix("ring-offset-") {
+        return style_ring_offset(this, r);
     }
 
     if let Some(r) = token.strip_prefix("min-w-") {
@@ -4350,6 +5325,264 @@ fn style_token<T: StyleExt>(this: T, token: &str) -> T {
         return style_h(this, r);
     }
 
+    this
+}
+
+// ---------- Extended layout dispatchers ----------
+
+fn style_order<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Ok(n) = rest.parse::<i32>() {
+        this.order(n)
+    } else {
+        this
+    }
+}
+
+fn style_aspect<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some((a, b)) = rest.split_once('/') {
+        if let (Ok(n), Ok(d)) = (a.parse::<f32>(), b.parse::<f32>()) {
+            if d != 0.0 {
+                return this.aspect(n / d);
+            }
+        }
+    }
+    if let Some(px) = parse_len(rest) {
+        return this.aspect(px);
+    }
+    this
+}
+
+fn style_columns<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Ok(n) = rest.parse::<u32>() {
+        this.columns(n)
+    } else {
+        this
+    }
+}
+
+fn style_space_x<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        return this.space_x(px * SPACING_UNIT);
+    }
+    paste! {
+        style_scale_dispatch!(this, rest, space_x;
+            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    }
+    this
+}
+
+fn style_space_y<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        return this.space_y(px * SPACING_UNIT);
+    }
+    paste! {
+        style_scale_dispatch!(this, rest, space_y;
+            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    }
+    this
+}
+
+fn style_divide_x<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        return this.divide_x(px);
+    }
+    paste! {
+        style_scale_dispatch!(this, rest, divide_x;
+            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    }
+    this
+}
+
+fn style_divide_y<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        return this.divide_y(px);
+    }
+    paste! {
+        style_scale_dispatch!(this, rest, divide_y;
+            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    }
+    this
+}
+
+fn style_divide_colour<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "transparent" => return this.divide_color(Color::TRANSPARENT),
+        "white" => {
+            let t = use_cn_theme().read();
+            return this.divide_color(t.colors.white);
+        }
+        "black" => {
+            let t = use_cn_theme().read();
+            return this.divide_color(t.colors.black);
+        }
+        _ => {}
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.divide_color(c);
+        }
+    }
+    this
+}
+
+fn style_outline<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        return this.outline_width(px);
+    }
+    match rest {
+        "0" => return this.outline_width(0.0),
+        "1" => return this.outline_width(1.0),
+        "2" => return this.outline_width(2.0),
+        "4" => return this.outline_width(4.0),
+        "8" => return this.outline_width(8.0),
+        "none" => return this.outline_none(),
+        "white" => {
+            let t = use_cn_theme().read();
+            return this.outline_color(t.colors.white);
+        }
+        "black" => {
+            let t = use_cn_theme().read();
+            return this.outline_color(t.colors.black);
+        }
+        _ => {}
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.outline_color(c);
+        }
+    }
+    this
+}
+
+fn style_outline_offset<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        this.outline_offset(px)
+    } else {
+        this
+    }
+}
+
+fn style_ring_offset<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        this.ring_offset(px)
+    } else {
+        this
+    }
+}
+
+fn style_decoration<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "0" => return this.decoration_thickness(0.0),
+        "1" => return this.decoration_thickness(1.0),
+        "2" => return this.decoration_thickness(2.0),
+        "4" => return this.decoration_thickness(4.0),
+        "8" => return this.decoration_thickness(8.0),
+        "auto" => return this.decoration_from_font(),
+        "from-font" => return this.decoration_from_font(),
+        "solid" | "double" | "dotted" | "dashed" | "wavy" => return this,
+        "transparent" => return this.decoration_color(Color::TRANSPARENT),
+        "white" => {
+            let t = use_cn_theme().read();
+            return this.decoration_color(t.colors.white);
+        }
+        "black" => {
+            let t = use_cn_theme().read();
+            return this.decoration_color(t.colors.black);
+        }
+        _ => {}
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.decoration_color(c);
+        }
+    }
+    this
+}
+
+fn style_underline_offset<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "auto" => this,
+        "0" => this.underline_offset(0.0),
+        "1" => this.underline_offset(1.0),
+        "2" => this.underline_offset(2.0),
+        "4" => this.underline_offset(4.0),
+        "8" => this.underline_offset(8.0),
+        _ => {
+            if let Some(px) = parse_len(rest) {
+                this.underline_offset(px)
+            } else {
+                this
+            }
+        }
+    }
+}
+
+fn style_line_clamp<T: StyleExt>(this: T, rest: &str) -> T {
+    if rest == "none" {
+        return this;
+    }
+    if let Ok(n) = rest.parse::<u32>() {
+        return this.line_clamp(n);
+    }
+    this
+}
+
+fn style_overflow_x<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "auto" | "hidden" | "clip" => this.overflow_x(Overflow::Clip),
+        "visible" => this.overflow_x(Overflow::None),
+        _ => this,
+    }
+}
+
+fn style_overflow_y<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "auto" | "hidden" | "clip" => this.overflow_y(Overflow::Clip),
+        "visible" => this.overflow_y(Overflow::None),
+        _ => this,
+    }
+}
+
+fn style_accent<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "transparent" => return this.accent_color(Color::TRANSPARENT),
+        "white" => {
+            let t = use_cn_theme().read();
+            return this.accent_color(t.colors.white);
+        }
+        "black" => {
+            let t = use_cn_theme().read();
+            return this.accent_color(t.colors.black);
+        }
+        "auto" => return this,
+        _ => {}
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.accent_color(c);
+        }
+    }
+    this
+}
+
+fn style_caret<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "transparent" => return this.caret_color(Color::TRANSPARENT),
+        "white" => {
+            let t = use_cn_theme().read();
+            return this.caret_color(t.colors.white);
+        }
+        "black" => {
+            let t = use_cn_theme().read();
+            return this.caret_color(t.colors.black);
+        }
+        _ => {}
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.caret_color(c);
+        }
+    }
     this
 }
 
@@ -4485,9 +5718,6 @@ fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
         "dotted" => return this.border_dotted(),
         "double" => return this.border_double(),
         "none" => return this.border_none(),
-        _ => {}
-    }
-    match rest {
         "t" => return this.border_t(1.0),
         "r" => return this.border_r(1.0),
         "b" => return this.border_b(1.0),

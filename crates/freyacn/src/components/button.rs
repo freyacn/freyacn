@@ -17,34 +17,6 @@ pub enum ButtonVariant {
     Link,
 }
 
-/// do impl for the ButtonVariant so it can accept strings or &str
-impl From<String> for ButtonVariant {
-    fn from(s: String) -> Self {
-        match s.as_ref() {
-            "default" => Self::Default,
-            "destructive" => Self::Destructive,
-            "outline" => Self::Outline,
-            "secondary" => Self::Secondary,
-            "ghost" => Self::Ghost,
-            "link" => Self::Link,
-            _ => Self::Default,
-        }
-    }
-}
-impl From<&str> for ButtonVariant {
-    fn from(s: &str) -> Self {
-        match s {
-            "default" => Self::Default,
-            "destructive" => Self::Destructive,
-            "outline" => Self::Outline,
-            "secondary" => Self::Secondary,
-            "ghost" => Self::Ghost,
-            "link" => Self::Link,
-            _ => Self::Default,
-        }
-    }
-}
-
 /// Available size presets for the button, matching shadcn/ui sizes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ButtonSize {
@@ -56,38 +28,6 @@ pub enum ButtonSize {
     IconXs,  // size-6
     IconSm,  // size-7
     IconLg,  // size-9
-}
-
-/// do impl for the ButtonSize so it can accept strings or &str
-impl From<String> for ButtonSize {
-    fn from(s: String) -> Self {
-        match s.as_ref() {
-            "default" => Self::Default,
-            "xs" => Self::Xs,
-            "sm" => Self::Sm,
-            "lg" => Self::Lg,
-            "icon" => Self::Icon,
-            "icon-xs" => Self::IconXs,
-            "icon-sm" => Self::IconSm,
-            "icon-lg" => Self::IconLg,
-            _ => Self::Default,
-        }
-    }
-}
-impl From<&str> for ButtonSize {
-    fn from(s: &str) -> Self {
-        match s {
-            "default" => Self::Default,
-            "xs" => Self::Xs,
-            "sm" => Self::Sm,
-            "lg" => Self::Lg,
-            "icon" => Self::Icon,
-            "icon-xs" => Self::IconXs,
-            "icon-sm" => Self::IconSm,
-            "icon-lg" => Self::IconLg,
-            _ => Self::Default,
-        }
-    }
 }
 
 #[component(
