@@ -5,3 +5,5 @@ pub mod label;
 
 pub use button::{Button, ButtonSize, ButtonVariant};
 pub use div::Div;
+pub use icon::Icon;
+pub use label::Label;

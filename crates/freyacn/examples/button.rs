@@ -40,7 +40,12 @@ fn app() -> impl IntoElement {
                                 .color(theme.foreground)
                                 .text("Default Size"),
                         )
-                        .child(Button().child("Button").variant("destructive")),
+                        .child(
+                            Button()
+                                .child("Button")
+                                .variant("destructive")
+                                .child(Icon().svg(alarm_clock())),
+                        ),
                 ),
         )
 }

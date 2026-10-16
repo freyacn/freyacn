@@ -5,7 +5,6 @@ extern crate self as freyacn;
 pub mod cn;
 pub mod components;
 pub mod extensions;
-pub mod icon_context;
 pub mod theme;
 pub mod utils;
 pub mod variants;
@@ -27,6 +26,8 @@ pub mod prelude {
     #[doc(inline)]
     pub use crate::variants::Variant;
     #[doc(inline)]
+    pub use freya::icons::lucide::*;
+    #[doc(inline)]
     pub use freya::prelude::{Button as ButtonPrimitive, StyleExt as _, *};
     #[doc(inline)]
     pub use freya_core::element::EventHandlerType;
@@ -37,6 +38,3 @@ pub mod prelude {
     #[doc(inline)]
     pub use rustc_hash::FxHashMap;
 }
-
-pub use prelude::*;
-

@@ -14,6 +14,7 @@ hotreload = ["freya/hotreload"]
 [dependencies]
 freya = { version = "0.4.3", features = ["icons"] }
 freya-core = "0.4.3"
+freya-icons = { version = "0.4.3", features = ["lucide"] }
 freyacn_macros.workspace = true
 paste = "1.0.15"
 rustc-hash = "2.1.3"
