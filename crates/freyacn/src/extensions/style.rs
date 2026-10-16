@@ -7,7 +7,8 @@ use std::borrow::Cow;
 use crate::theme::use_cn_theme;
 use freya::prelude::{
     Alignment, Border, Content, CornerRadius, Direction, Fill, FontSize, FontSlant, FontWeight,
-    Gaps, Overflow, Position, Shadow, Size, TextAlign, TextDecoration,
+    FontWidth, Gaps, Overflow, Position, Scale, Shadow, Size, TextAlign, TextDecoration,
+    TextHeightBehavior, TextShadow, TransformOrigin, VisibleSize,
 };
 
 use freya::prelude::Color;
@@ -139,6 +140,18 @@ pub enum TableLayout {
     Fixed,
 }
 
+/// Deferred positioning mode.
+///
+/// The actual [`Position`] value is materialised at render time by
+/// [`Style::to_position`], so `relative top-4` and `top-4 relative`
+/// produce the same result regardless of class order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PositionKind {
+    Relative,
+    Absolute,
+    Global,
+}
+
 // ==============================================================
 // Macros — inherent Style methods
 // ==============================================================
@@ -189,6 +202,41 @@ macro_rules! style_spacing_scale {
 }
 
 // ==============================================================
+// Helper macros — expand every palette family in one shot
+// ==============================================================
+
+macro_rules! style_all_palette_families {
+    ($prefix:ident, $field:ident) => {
+        style_palette_family!($prefix, $field, stone);
+        style_palette_family!($prefix, $field, mauve);
+        style_palette_family!($prefix, $field, olive);
+        style_palette_family!($prefix, $field, mist);
+        style_palette_family!($prefix, $field, taupe);
+        style_palette_family!($prefix, $field, slate);
+        style_palette_family!($prefix, $field, gray);
+        style_palette_family!($prefix, $field, zinc);
+        style_palette_family!($prefix, $field, neutral);
+        style_palette_family!($prefix, $field, red);
+        style_palette_family!($prefix, $field, orange);
+        style_palette_family!($prefix, $field, amber);
+        style_palette_family!($prefix, $field, yellow);
+        style_palette_family!($prefix, $field, lime);
+        style_palette_family!($prefix, $field, green);
+        style_palette_family!($prefix, $field, emerald);
+        style_palette_family!($prefix, $field, teal);
+        style_palette_family!($prefix, $field, cyan);
+        style_palette_family!($prefix, $field, sky);
+        style_palette_family!($prefix, $field, blue);
+        style_palette_family!($prefix, $field, indigo);
+        style_palette_family!($prefix, $field, violet);
+        style_palette_family!($prefix, $field, purple);
+        style_palette_family!($prefix, $field, fuchsia);
+        style_palette_family!($prefix, $field, pink);
+        style_palette_family!($prefix, $field, rose);
+    };
+}
+
+// ==============================================================
 // Macros — StyleExt provided methods
 // ==============================================================
 
@@ -231,6 +279,37 @@ macro_rules! ext_spacing_scale {
     };
 }
 
+macro_rules! ext_all_palette_families {
+    ($prefix:ident) => {
+        ext_palette_family!($prefix, stone);
+        ext_palette_family!($prefix, mauve);
+        ext_palette_family!($prefix, olive);
+        ext_palette_family!($prefix, mist);
+        ext_palette_family!($prefix, taupe);
+        ext_palette_family!($prefix, slate);
+        ext_palette_family!($prefix, gray);
+        ext_palette_family!($prefix, zinc);
+        ext_palette_family!($prefix, neutral);
+        ext_palette_family!($prefix, red);
+        ext_palette_family!($prefix, orange);
+        ext_palette_family!($prefix, amber);
+        ext_palette_family!($prefix, yellow);
+        ext_palette_family!($prefix, lime);
+        ext_palette_family!($prefix, green);
+        ext_palette_family!($prefix, emerald);
+        ext_palette_family!($prefix, teal);
+        ext_palette_family!($prefix, cyan);
+        ext_palette_family!($prefix, sky);
+        ext_palette_family!($prefix, blue);
+        ext_palette_family!($prefix, indigo);
+        ext_palette_family!($prefix, violet);
+        ext_palette_family!($prefix, purple);
+        ext_palette_family!($prefix, fuchsia);
+        ext_palette_family!($prefix, pink);
+        ext_palette_family!($prefix, rose);
+    };
+}
+
 /// Interactive and environmental states a style can be conditioned on.
 ///
 /// Combined with `|` when multiple prefixes are chained
@@ -251,31 +330,21 @@ impl StateFlags {
     pub const CHECKED: StateFlags = StateFlags(1 << 8);
     pub const TARGET: StateFlags = StateFlags(1 << 9);
 
-    /// Combine two flag sets.
     pub const fn or(self, other: StateFlags) -> StateFlags {
         StateFlags(self.0 | other.0)
     }
 
-    /// `true` when every bit set in `self` is also set in `other`.
-    ///
-    /// Used at render time to decide whether a state-conditional style
-    /// should be applied.
     pub const fn is_subset_of(self, other: StateFlags) -> bool {
         self.0 & other.0 == self.0
     }
 
-    /// `true` when at least one bit is set.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 }
 
-/// One entry in [`Style::states`]: a set of flags plus the `Style` to
-/// apply when that set is fully active.
 pub type StateStyle = (StateFlags, Box<Style>);
 
-/// Map a prefix name to its flag. Returns `None` for anything that isn't
-/// a recognised state.
 fn state_flag_for(name: &str) -> Option<StateFlags> {
     Some(match name {
         "dark" => StateFlags::DARK,
@@ -292,18 +361,6 @@ fn state_flag_for(name: &str) -> Option<StateFlags> {
     })
 }
 
-/// Peel any leading `state:` prefixes off a token.
-///
-/// ```text
-/// split_state_prefix("hover:bg-primary")
-///     -> (StateFlags::HOVER, "bg-primary")
-///
-/// split_state_prefix("dark:hover:bg-slate-800")
-///     -> (StateFlags::DARK | StateFlags::HOVER, "bg-slate-800")
-///
-/// split_state_prefix("bg-primary")
-///     -> (StateFlags::NONE, "bg-primary")
-/// ```
 fn split_state_prefix(token: &str) -> (StateFlags, &str) {
     let mut flags = StateFlags::NONE;
     let mut rest = token;
@@ -315,6 +372,40 @@ fn split_state_prefix(token: &str) -> (StateFlags, &str) {
         rest = tail;
     }
     (flags, rest)
+}
+
+// ==============================================================
+// Gap merging helper
+// ==============================================================
+
+/// Per-side merge of two optional `Gaps` values.
+///
+/// `over` wins per side when it is non-zero; otherwise `base` is kept.
+///
+/// `Gaps` does not distinguish "explicitly set to 0" from "unset", so
+/// `0.0` is treated as "not specified." This matches the way Tailwind
+/// spacing utilities are almost always authored; the only case where
+/// it differs from CSS is `p-4 px-0` (which would keep the left/right
+/// from `p-4`). Use a per-side `Option` representation if you ever need
+/// strict fidelity there.
+fn merge_gaps(base: Option<Gaps>, over: Option<Gaps>) -> Option<Gaps> {
+    match (base, over) {
+        (None, x) | (x, None) => x,
+        (Some(a), Some(b)) => Some(Gaps::new(
+            if b.top() != 0.0 { b.top() } else { a.top() },
+            if b.right() != 0.0 {
+                b.right()
+            } else {
+                a.right()
+            },
+            if b.bottom() != 0.0 {
+                b.bottom()
+            } else {
+                a.bottom()
+            },
+            if b.left() != 0.0 { b.left() } else { a.left() },
+        )),
+    }
 }
 
 // ==============================================================
@@ -346,9 +437,13 @@ pub struct Style {
     pub bg_attachment: Option<BackgroundAttachment>,
     pub bg_clip: Option<BackgroundClip>,
 
+    // ---- Ring (Tailwind v4) ----
     pub ring_width: Option<f32>,
     pub ring_color: Option<Color>,
     pub ring_offset: Option<f32>,
+    pub ring_offset_color: Option<Color>,
+    pub inset_ring_width: Option<f32>,
+    pub inset_ring_color: Option<Color>,
 
     pub text_color: Option<Color>,
     pub font_size: Option<FontSize>,
@@ -375,6 +470,23 @@ pub struct Style {
     pub caret_color: Option<Color>,
     pub placeholder_color: Option<Color>,
 
+    // ---- Extended typography (Rect-only methods) ----
+    pub text_shadows: Vec<TextShadow>,
+    pub font_width: Option<FontWidth>,
+    pub text_height: Option<TextHeightBehavior>,
+    pub visible_width: Option<VisibleSize>,
+    pub visible_height: Option<VisibleSize>,
+
+    // ---- Transforms / effects (Rect-only methods) ----
+    pub rotate: Option<f32>,
+    pub scale: Option<Scale>,
+    pub transform_origin: Option<TransformOrigin>,
+    pub blur: Option<f32>,
+
+    // ---- Child offsets (Rect-only methods) ----
+    pub offset_x: Option<f32>,
+    pub offset_y: Option<f32>,
+
     pub padding: Option<Gaps>,
     pub margin: Option<Gaps>,
 
@@ -389,7 +501,11 @@ pub struct Style {
     pub columns: Option<u32>,
     pub container: Option<bool>,
 
-    pub position: Option<Position>,
+    // ---- Positioning ----
+    // The mode is stored separately from the side offsets so that
+    // `relative top-4` and `top-4 relative` produce the same result.
+    // `to_position()` materialises a `Position` at render time.
+    pub position_kind: Option<PositionKind>,
     pub top: Option<f32>,
     pub right: Option<f32>,
     pub bottom: Option<f32>,
@@ -412,6 +528,8 @@ pub struct Style {
     pub gap_y: Option<f32>,
     pub space_x: Option<f32>,
     pub space_y: Option<f32>,
+    pub flex_shrink: Option<f32>,
+    pub flex_grow: Option<f32>,
 
     pub opacity: Option<f32>,
     pub visibility: Option<Visibility>,
@@ -420,12 +538,6 @@ pub struct Style {
     pub pointer_events: Option<bool>,
     pub sr_only: Option<bool>,
 
-    /// State-conditional styles.
-    ///
-    /// Populated by the class-string parser when it encounters prefixed
-    /// tokens like `dark:bg-slate-900` or `hover:bg-primary/80`. Folded
-    /// into the base style at render time via
-    /// [`Style::with_active_states`].
     pub states: Vec<StateStyle>,
 }
 
@@ -456,6 +568,9 @@ impl Default for Style {
             ring_width: None,
             ring_color: None,
             ring_offset: None,
+            ring_offset_color: None,
+            inset_ring_width: None,
+            inset_ring_color: None,
             text_color: None,
             font_size: None,
             font_slant: None,
@@ -480,6 +595,17 @@ impl Default for Style {
             accent_color: None,
             caret_color: None,
             placeholder_color: None,
+            text_shadows: Vec::new(),
+            font_width: None,
+            text_height: None,
+            visible_width: None,
+            visible_height: None,
+            rotate: None,
+            scale: None,
+            transform_origin: None,
+            blur: None,
+            offset_x: None,
+            offset_y: None,
             padding: None,
             margin: None,
             width: None,
@@ -492,7 +618,7 @@ impl Default for Style {
             table_layout: None,
             columns: None,
             container: None,
-            position: None,
+            position_kind: None,
             top: None,
             right: None,
             bottom: None,
@@ -513,6 +639,8 @@ impl Default for Style {
             gap_y: None,
             space_x: None,
             space_y: None,
+            flex_shrink: None,
+            flex_grow: None,
             opacity: None,
             visibility: None,
             user_select: None,
@@ -554,6 +682,26 @@ impl Style {
         Some(b)
     }
 
+    /// Materialise a [`Position`] from `position_kind` and the current
+    /// side offsets.
+    ///
+    /// Called at render time so that class ordering never matters —
+    /// `relative top-4` and `top-4 relative` both produce a
+    /// relatively-positioned element 1rem from the top.
+    pub fn to_position(&self) -> Option<Position> {
+        let sides = Box::new(PositionSides {
+            top: self.top,
+            right: self.right,
+            bottom: self.bottom,
+            left: self.left,
+        });
+        match self.position_kind? {
+            PositionKind::Relative => Some(Position::Stacked(sides)),
+            PositionKind::Absolute => Some(Position::Absolute(sides)),
+            PositionKind::Global => Some(Position::Global(sides)),
+        }
+    }
+
     // ==============================================================
     // Merging
     // ==============================================================
@@ -563,6 +711,8 @@ impl Style {
         shadows.extend(other.shadows);
         let mut font_families = self.font_families;
         font_families.extend(other.font_families);
+        let mut text_shadows = self.text_shadows;
+        text_shadows.extend(other.text_shadows);
 
         Style {
             background: other.background.or(self.background),
@@ -591,6 +741,9 @@ impl Style {
             ring_width: other.ring_width.or(self.ring_width),
             ring_color: other.ring_color.or(self.ring_color),
             ring_offset: other.ring_offset.or(self.ring_offset),
+            ring_offset_color: other.ring_offset_color.or(self.ring_offset_color),
+            inset_ring_width: other.inset_ring_width.or(self.inset_ring_width),
+            inset_ring_color: other.inset_ring_color.or(self.inset_ring_color),
 
             text_color: other.text_color.or(self.text_color),
             font_size: other.font_size.or(self.font_size),
@@ -617,8 +770,22 @@ impl Style {
             caret_color: other.caret_color.or(self.caret_color),
             placeholder_color: other.placeholder_color.or(self.placeholder_color),
 
-            padding: other.padding.or(self.padding),
-            margin: other.margin.or(self.margin),
+            text_shadows,
+            font_width: other.font_width.or(self.font_width),
+            text_height: other.text_height.or(self.text_height),
+            visible_width: other.visible_width.or(self.visible_width),
+            visible_height: other.visible_height.or(self.visible_height),
+            rotate: other.rotate.or(self.rotate),
+            scale: other.scale.or(self.scale),
+            transform_origin: other.transform_origin.or(self.transform_origin),
+            blur: other.blur.or(self.blur),
+            offset_x: other.offset_x.or(self.offset_x),
+            offset_y: other.offset_y.or(self.offset_y),
+
+            // Per-side merge so that a variant setting only `px-*` does
+            // not wipe the base class's `py-*`.
+            padding: merge_gaps(self.padding, other.padding),
+            margin: merge_gaps(self.margin, other.margin),
 
             width: other.width.or(self.width),
             height: other.height.or(self.height),
@@ -631,7 +798,7 @@ impl Style {
             columns: other.columns.or(self.columns),
             container: other.container.or(self.container),
 
-            position: other.position.or(self.position),
+            position_kind: other.position_kind.or(self.position_kind),
             top: other.top.or(self.top),
             right: other.right.or(self.right),
             bottom: other.bottom.or(self.bottom),
@@ -654,6 +821,8 @@ impl Style {
             gap_y: other.gap_y.or(self.gap_y),
             space_x: other.space_x.or(self.space_x),
             space_y: other.space_y.or(self.space_y),
+            flex_shrink: other.flex_shrink.or(self.flex_shrink),
+            flex_grow: other.flex_grow.or(self.flex_grow),
 
             opacity: other.opacity.or(self.opacity),
             visibility: other.visibility.or(self.visibility),
@@ -688,31 +857,10 @@ impl Style {
         *self == Style::default()
     }
 
-    /// Fold every state-conditional style whose flags are fully
-    /// contained in `active` into the base style, returning the merged
-    /// result.
-    ///
-    /// Entries are applied in declaration order, so later declarations
-    /// win — consistent with the rest of the merge model.
-    ///
-    /// ```ignore
-    /// let theme = use_cn_theme().read();
-    /// let mut active = StateFlags::NONE;
-    /// if theme.is_dark       { active = active.or(StateFlags::DARK); }
-    /// if *hovering.read()    { active = active.or(StateFlags::HOVER); }
-    /// if focus.is_focused()  { active = active.or(StateFlags::FOCUS_VISIBLE); }
-    ///
-    /// let effective = style.with_active_states(active);
-    /// ```
     pub fn with_active_states(mut self, active: StateFlags) -> Style {
-        // Take the vector so we can move entries into `self` while
-        // iterating without a borrow conflict.
         let states = std::mem::take(&mut self.states);
         for (flags, state_style) in states {
             if flags.is_subset_of(active) {
-                // `state_style` is a delta: merge the base into it so
-                // the delta's set fields win, then re-take its own
-                // (empty) states vec to keep the chain flat.
                 self = self.merge(*state_style);
             }
         }
@@ -847,10 +995,6 @@ impl Style {
         self.max_height = Some(size.into());
         self
     }
-    pub fn position(mut self, pos: Position) -> Self {
-        self.position = Some(pos);
-        self
-    }
     pub fn z_index(mut self, z: i32) -> Self {
         self.z_index = Some(z);
         self
@@ -893,6 +1037,56 @@ impl Style {
     }
     pub fn gap_y(mut self, size: f32) -> Self {
         self.gap_y = Some(size);
+        self
+    }
+
+    // ---- Extended typography setters ----
+    pub fn text_shadow(mut self, shadow: impl Into<TextShadow>) -> Self {
+        self.text_shadows.push(shadow.into());
+        self
+    }
+    pub fn font_width(mut self, width: impl Into<FontWidth>) -> Self {
+        self.font_width = Some(width.into());
+        self
+    }
+    pub fn text_height(mut self, height: impl Into<TextHeightBehavior>) -> Self {
+        self.text_height = Some(height.into());
+        self
+    }
+    pub fn visible_width(mut self, size: impl Into<VisibleSize>) -> Self {
+        self.visible_width = Some(size.into());
+        self
+    }
+    pub fn visible_height(mut self, size: impl Into<VisibleSize>) -> Self {
+        self.visible_height = Some(size.into());
+        self
+    }
+
+    // ---- Transform setters ----
+    pub fn rotate(mut self, degrees: f32) -> Self {
+        self.rotate = Some(degrees);
+        self
+    }
+    pub fn scale(mut self, scale: impl Into<Scale>) -> Self {
+        self.scale = Some(scale.into());
+        self
+    }
+    pub fn transform_origin(mut self, origin: impl Into<TransformOrigin>) -> Self {
+        self.transform_origin = Some(origin.into());
+        self
+    }
+    pub fn blur(mut self, radius: f32) -> Self {
+        self.blur = Some(radius);
+        self
+    }
+
+    // ---- Child offset setters ----
+    pub fn offset_x(mut self, px: f32) -> Self {
+        self.offset_x = Some(px);
+        self
+    }
+    pub fn offset_y(mut self, px: f32) -> Self {
+        self.offset_y = Some(px);
         self
     }
 
@@ -1210,9 +1404,9 @@ impl Style {
         self
     }
 
-    // ---- Ring ----
+    // ---- Ring (Tailwind v4) ----
     pub fn ring(self) -> Self {
-        self.ring_width(3.0)
+        self.ring_width(1.0)
     }
     pub fn ring_0(self) -> Self {
         self.ring_width(0.0)
@@ -1223,18 +1417,225 @@ impl Style {
     pub fn ring_2(self) -> Self {
         self.ring_width(2.0)
     }
+    pub fn ring_3(self) -> Self {
+        self.ring_width(3.0)
+    }
     pub fn ring_4(self) -> Self {
         self.ring_width(4.0)
+    }
+    pub fn ring_6(self) -> Self {
+        self.ring_width(6.0)
     }
     pub fn ring_8(self) -> Self {
         self.ring_width(8.0)
     }
-    pub fn ring_primary(self) -> Self {
+
+    pub fn ring_offset_0(self) -> Self {
+        self.ring_offset(0.0)
+    }
+    pub fn ring_offset_1(self) -> Self {
+        self.ring_offset(1.0)
+    }
+    pub fn ring_offset_2(self) -> Self {
+        self.ring_offset(2.0)
+    }
+    pub fn ring_offset_4(self) -> Self {
+        self.ring_offset(4.0)
+    }
+    pub fn ring_offset_8(self) -> Self {
+        self.ring_offset(8.0)
+    }
+
+    pub fn ring_offset_color(mut self, c: Color) -> Self {
+        self.ring_offset_color = Some(c);
+        self
+    }
+
+    pub fn inset_ring(self) -> Self {
+        self.inset_ring_width(1.0)
+    }
+    pub fn inset_ring_0(self) -> Self {
+        self.inset_ring_width(0.0)
+    }
+    pub fn inset_ring_1(self) -> Self {
+        self.inset_ring_width(1.0)
+    }
+    pub fn inset_ring_2(self) -> Self {
+        self.inset_ring_width(2.0)
+    }
+    pub fn inset_ring_4(self) -> Self {
+        self.inset_ring_width(4.0)
+    }
+    pub fn inset_ring_8(self) -> Self {
+        self.inset_ring_width(8.0)
+    }
+    pub fn inset_ring_width(mut self, width: f32) -> Self {
+        self.inset_ring_width = Some(width);
+        self
+    }
+    pub fn inset_ring_color(mut self, c: Color) -> Self {
+        self.inset_ring_color = Some(c);
+        self
+    }
+
+    pub fn ring_white(self) -> Self {
         let t = use_cn_theme().read();
-        let c = t.primary;
+        let c = t.colors.white;
         drop(t);
         self.ring_color(c)
     }
+    pub fn ring_black(self) -> Self {
+        let t = use_cn_theme().read();
+        let c = t.colors.black;
+        drop(t);
+        self.ring_color(c)
+    }
+    pub fn ring_transparent(self) -> Self {
+        self.ring_color(Color::TRANSPARENT)
+    }
+    pub fn ring_offset_white(self) -> Self {
+        let t = use_cn_theme().read();
+        let c = t.colors.white;
+        drop(t);
+        self.ring_offset_color(c)
+    }
+    pub fn ring_offset_black(self) -> Self {
+        let t = use_cn_theme().read();
+        let c = t.colors.black;
+        drop(t);
+        self.ring_offset_color(c)
+    }
+    pub fn inset_ring_white(self) -> Self {
+        let t = use_cn_theme().read();
+        let c = t.colors.white;
+        drop(t);
+        self.inset_ring_color(c)
+    }
+    pub fn inset_ring_black(self) -> Self {
+        let t = use_cn_theme().read();
+        let c = t.colors.black;
+        drop(t);
+        self.inset_ring_color(c)
+    }
+
+    style_all_palette_families!(ring, ring_color);
+    style_all_palette_families!(ring_offset, ring_offset_color);
+    style_all_palette_families!(inset_ring, inset_ring_color);
+
+    style_semantic_color!(
+        ring,
+        ring_color,
+        background,
+        foreground,
+        primary,
+        primary_foreground,
+        secondary,
+        secondary_foreground,
+        muted,
+        muted_foreground,
+        accent,
+        accent_foreground,
+        destructive,
+        destructive_foreground,
+        card,
+        card_foreground,
+        popover,
+        popover_foreground,
+        border,
+        input,
+        ring,
+        chart_1,
+        chart_2,
+        chart_3,
+        chart_4,
+        chart_5,
+        sidebar,
+        sidebar_foreground,
+        sidebar_primary,
+        sidebar_primary_foreground,
+        sidebar_accent,
+        sidebar_accent_foreground,
+        sidebar_border,
+        sidebar_ring,
+        disabled,
+        disabled_foreground,
+    );
+    style_semantic_color!(
+        ring_offset,
+        ring_offset_color,
+        background,
+        foreground,
+        primary,
+        primary_foreground,
+        secondary,
+        secondary_foreground,
+        muted,
+        muted_foreground,
+        accent,
+        accent_foreground,
+        destructive,
+        destructive_foreground,
+        card,
+        card_foreground,
+        popover,
+        popover_foreground,
+        border,
+        input,
+        ring,
+        chart_1,
+        chart_2,
+        chart_3,
+        chart_4,
+        chart_5,
+        sidebar,
+        sidebar_foreground,
+        sidebar_primary,
+        sidebar_primary_foreground,
+        sidebar_accent,
+        sidebar_accent_foreground,
+        sidebar_border,
+        sidebar_ring,
+        disabled,
+        disabled_foreground,
+    );
+    style_semantic_color!(
+        inset_ring,
+        inset_ring_color,
+        background,
+        foreground,
+        primary,
+        primary_foreground,
+        secondary,
+        secondary_foreground,
+        muted,
+        muted_foreground,
+        accent,
+        accent_foreground,
+        destructive,
+        destructive_foreground,
+        card,
+        card_foreground,
+        popover,
+        popover_foreground,
+        border,
+        input,
+        ring,
+        chart_1,
+        chart_2,
+        chart_3,
+        chart_4,
+        chart_5,
+        sidebar,
+        sidebar_foreground,
+        sidebar_primary,
+        sidebar_primary_foreground,
+        sidebar_accent,
+        sidebar_accent_foreground,
+        sidebar_border,
+        sidebar_ring,
+        disabled,
+        disabled_foreground,
+    );
 
     // ---- Flex ----
     pub fn flex_col(self) -> Self {
@@ -1263,11 +1664,50 @@ impl Style {
     pub fn flex_1(self) -> Self {
         self.width(Size::flex(1.0)).height(Size::flex(1.0))
     }
+    /// Grow on both axes.
+    ///
+    /// `grow` in Tailwind means "fill the available space in the main
+    /// axis", but the parser cannot know the container direction at
+    /// parse time. Setting both axes to `Size::flex(1)` matches
+    /// `flex-1` and behaves correctly in both rows and columns.
     pub fn grow(self) -> Self {
-        self.width(Size::flex(1.0))
+        self.width(Size::flex(1.0)).height(Size::flex(1.0))
     }
+    /// Do not grow.
+    ///
+    /// `grow-0` means "don't take flex space" — the closest Freya
+    /// equivalent is intrinsic sizing (`Size::auto()`) on both axes.
     pub fn grow_0(self) -> Self {
-        self.width(Size::px(0.0))
+        self.width(Size::auto()).height(Size::auto())
+    }
+
+    // ---- flex-shrink / flex-grow ----
+    //
+    // Freya 0.4.3's layout engine (torin) doesn't expose a `flex-shrink`
+    // property, so `shrink_0` maps to the closest equivalent: content
+    // sizing (`Size::auto()`), which is what prevents an element from
+    // being squeezed below its intrinsic size in a real flex container.
+    // The `flex_shrink` field is stored for future engine support.
+    pub fn shrink(mut self) -> Self {
+        self.flex_shrink = Some(1.0);
+        self
+    }
+    pub fn shrink_0(mut self) -> Self {
+        self.flex_shrink = Some(0.0);
+        self.width(Size::auto())
+    }
+    pub fn shrink_1(mut self) -> Self {
+        self.flex_shrink = Some(1.0);
+        self
+    }
+    pub fn flex_shrink(mut self, value: f32) -> Self {
+        self.flex_shrink = Some(value);
+        self
+    }
+
+    pub fn grow_factor(mut self, value: f32) -> Self {
+        self.flex_grow = Some(value);
+        self
     }
 
     pub fn justify_start(self) -> Self {
@@ -1738,28 +2178,20 @@ impl Style {
     }
 
     // ---- Positioning ----
-    fn merge_sides(&self) -> PositionSides {
-        PositionSides {
-            top: self.top,
-            right: self.right,
-            bottom: self.bottom,
-            left: self.left,
-        }
-    }
-
+    //
+    // The mode is stored, not snapshotted. `to_position()` builds the
+    // actual `Position` at render time so ordering in the class string
+    // doesn't matter.
     pub fn relative(mut self) -> Self {
-        let sides = self.merge_sides();
-        self.position = Some(Position::Stacked(Box::new(sides)));
+        self.position_kind = Some(PositionKind::Relative);
         self
     }
     pub fn absolute(mut self) -> Self {
-        let sides = self.merge_sides();
-        self.position = Some(Position::Absolute(Box::new(sides)));
+        self.position_kind = Some(PositionKind::Absolute);
         self
     }
     pub fn global(mut self) -> Self {
-        let sides = self.merge_sides();
-        self.position = Some(Position::Global(Box::new(sides)));
+        self.position_kind = Some(PositionKind::Global);
         self
     }
 
@@ -1807,47 +2239,78 @@ impl Style {
     }
 
     // ---- Spacing ----
-    pub fn p(self, size: f32) -> Self {
-        self.padding(Gaps::new_all(size))
+    //
+    // torin 0.4.3's `Gaps` has private fields, so read-modify-write goes
+    // through `top()/right()/bottom()/left()` accessors. This makes
+    // `p-2 px-4` behave like Tailwind — later per-side tokens override
+    // only the sides they name.
+    pub fn p(mut self, size: f32) -> Self {
+        self.padding = Some(Gaps::new_all(size));
+        self
     }
-    pub fn px(self, size: f32) -> Self {
-        self.padding(Gaps::new(size, 0.0, size, 0.0))
+    pub fn px(mut self, size: f32) -> Self {
+        let g = self.padding.unwrap_or_default();
+        self.padding = Some(Gaps::new(g.top(), size, g.bottom(), size));
+        self
     }
-    pub fn py(self, size: f32) -> Self {
-        self.padding(Gaps::new(0.0, size, 0.0, size))
+    pub fn py(mut self, size: f32) -> Self {
+        let g = self.padding.unwrap_or_default();
+        self.padding = Some(Gaps::new(size, g.right(), size, g.left()));
+        self
     }
-    pub fn pt(self, size: f32) -> Self {
-        self.padding(Gaps::new(size, 0.0, 0.0, 0.0))
+    pub fn pt(mut self, size: f32) -> Self {
+        let g = self.padding.unwrap_or_default();
+        self.padding = Some(Gaps::new(size, g.right(), g.bottom(), g.left()));
+        self
     }
-    pub fn pr(self, size: f32) -> Self {
-        self.padding(Gaps::new(0.0, size, 0.0, 0.0))
+    pub fn pr(mut self, size: f32) -> Self {
+        let g = self.padding.unwrap_or_default();
+        self.padding = Some(Gaps::new(g.top(), size, g.bottom(), g.left()));
+        self
     }
-    pub fn pb(self, size: f32) -> Self {
-        self.padding(Gaps::new(0.0, 0.0, size, 0.0))
+    pub fn pb(mut self, size: f32) -> Self {
+        let g = self.padding.unwrap_or_default();
+        self.padding = Some(Gaps::new(g.top(), g.right(), size, g.left()));
+        self
     }
-    pub fn pl(self, size: f32) -> Self {
-        self.padding(Gaps::new(0.0, 0.0, 0.0, size))
+    pub fn pl(mut self, size: f32) -> Self {
+        let g = self.padding.unwrap_or_default();
+        self.padding = Some(Gaps::new(g.top(), g.right(), g.bottom(), size));
+        self
     }
-    pub fn m(self, size: f32) -> Self {
-        self.margin(Gaps::new_all(size))
+    pub fn m(mut self, size: f32) -> Self {
+        self.margin = Some(Gaps::new_all(size));
+        self
     }
-    pub fn mx(self, size: f32) -> Self {
-        self.margin(Gaps::new(size, 0.0, size, 0.0))
+    pub fn mx(mut self, size: f32) -> Self {
+        let g = self.margin.unwrap_or_default();
+        self.margin = Some(Gaps::new(g.top(), size, g.bottom(), size));
+        self
     }
-    pub fn my(self, size: f32) -> Self {
-        self.margin(Gaps::new(0.0, size, 0.0, size))
+    pub fn my(mut self, size: f32) -> Self {
+        let g = self.margin.unwrap_or_default();
+        self.margin = Some(Gaps::new(size, g.right(), size, g.left()));
+        self
     }
-    pub fn mt(self, size: f32) -> Self {
-        self.margin(Gaps::new(size, 0.0, 0.0, 0.0))
+    pub fn mt(mut self, size: f32) -> Self {
+        let g = self.margin.unwrap_or_default();
+        self.margin = Some(Gaps::new(size, g.right(), g.bottom(), g.left()));
+        self
     }
-    pub fn mr(self, size: f32) -> Self {
-        self.margin(Gaps::new(0.0, size, 0.0, 0.0))
+    pub fn mr(mut self, size: f32) -> Self {
+        let g = self.margin.unwrap_or_default();
+        self.margin = Some(Gaps::new(g.top(), size, g.bottom(), g.left()));
+        self
     }
-    pub fn mb(self, size: f32) -> Self {
-        self.margin(Gaps::new(0.0, 0.0, size, 0.0))
+    pub fn mb(mut self, size: f32) -> Self {
+        let g = self.margin.unwrap_or_default();
+        self.margin = Some(Gaps::new(g.top(), g.right(), size, g.left()));
+        self
     }
-    pub fn ml(self, size: f32) -> Self {
-        self.margin(Gaps::new(0.0, 0.0, 0.0, size))
+    pub fn ml(mut self, size: f32) -> Self {
+        let g = self.margin.unwrap_or_default();
+        self.margin = Some(Gaps::new(g.top(), g.right(), g.bottom(), size));
+        self
     }
 
     // ---- Palette / semantic colours ----
@@ -2930,9 +3393,6 @@ pub trait StyleExt: Sized {
     fn max_height(self, size: impl Into<Size>) -> Self {
         self.map_style(|s| s.max_height(size))
     }
-    fn position(self, pos: Position) -> Self {
-        self.map_style(|s| s.position(pos))
-    }
     fn z_index(self, z: i32) -> Self {
         self.map_style(|s| s.z_index(z))
     }
@@ -2965,6 +3425,45 @@ pub trait StyleExt: Sized {
     }
     fn gap_y(self, size: f32) -> Self {
         self.map_style(|s| s.gap_y(size))
+    }
+
+    // ---- Extended typography ----
+    fn text_shadow(self, shadow: impl Into<TextShadow>) -> Self {
+        self.map_style(|s| s.text_shadow(shadow))
+    }
+    fn font_width(self, width: impl Into<FontWidth>) -> Self {
+        self.map_style(|s| s.font_width(width))
+    }
+    fn text_height(self, height: impl Into<TextHeightBehavior>) -> Self {
+        self.map_style(|s| s.text_height(height))
+    }
+    fn visible_width(self, size: impl Into<VisibleSize>) -> Self {
+        self.map_style(|s| s.visible_width(size))
+    }
+    fn visible_height(self, size: impl Into<VisibleSize>) -> Self {
+        self.map_style(|s| s.visible_height(size))
+    }
+
+    // ---- Transforms ----
+    fn rotate(self, degrees: f32) -> Self {
+        self.map_style(|s| s.rotate(degrees))
+    }
+    fn scale(self, scale: impl Into<Scale>) -> Self {
+        self.map_style(|s| s.scale(scale))
+    }
+    fn transform_origin(self, origin: impl Into<TransformOrigin>) -> Self {
+        self.map_style(|s| s.transform_origin(origin))
+    }
+    fn blur(self, radius: f32) -> Self {
+        self.map_style(|s| s.blur(radius))
+    }
+
+    // ---- Child offsets ----
+    fn offset_x(self, px: f32) -> Self {
+        self.map_style(|s| s.offset_x(px))
+    }
+    fn offset_y(self, px: f32) -> Self {
+        self.map_style(|s| s.offset_y(px))
     }
 
     // Literal colours
@@ -3230,7 +3729,7 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.shadow_none())
     }
 
-    // Ring
+    // Ring (Tailwind v4)
     fn ring(self) -> Self {
         self.map_style(|s| s.ring())
     }
@@ -3243,15 +3742,200 @@ pub trait StyleExt: Sized {
     fn ring_2(self) -> Self {
         self.map_style(|s| s.ring_2())
     }
+    fn ring_3(self) -> Self {
+        self.map_style(|s| s.ring_3())
+    }
     fn ring_4(self) -> Self {
         self.map_style(|s| s.ring_4())
+    }
+    fn ring_6(self) -> Self {
+        self.map_style(|s| s.ring_6())
     }
     fn ring_8(self) -> Self {
         self.map_style(|s| s.ring_8())
     }
-    fn ring_primary(self) -> Self {
-        self.map_style(|s| s.ring_primary())
+
+    fn ring_offset_0(self) -> Self {
+        self.map_style(|s| s.ring_offset_0())
     }
+    fn ring_offset_1(self) -> Self {
+        self.map_style(|s| s.ring_offset_1())
+    }
+    fn ring_offset_2(self) -> Self {
+        self.map_style(|s| s.ring_offset_2())
+    }
+    fn ring_offset_4(self) -> Self {
+        self.map_style(|s| s.ring_offset_4())
+    }
+    fn ring_offset_8(self) -> Self {
+        self.map_style(|s| s.ring_offset_8())
+    }
+    fn ring_offset_color(self, c: Color) -> Self {
+        self.map_style(|s| s.ring_offset_color(c))
+    }
+
+    fn inset_ring(self) -> Self {
+        self.map_style(|s| s.inset_ring())
+    }
+    fn inset_ring_0(self) -> Self {
+        self.map_style(|s| s.inset_ring_0())
+    }
+    fn inset_ring_1(self) -> Self {
+        self.map_style(|s| s.inset_ring_1())
+    }
+    fn inset_ring_2(self) -> Self {
+        self.map_style(|s| s.inset_ring_2())
+    }
+    fn inset_ring_4(self) -> Self {
+        self.map_style(|s| s.inset_ring_4())
+    }
+    fn inset_ring_8(self) -> Self {
+        self.map_style(|s| s.inset_ring_8())
+    }
+    fn inset_ring_width(self, w: f32) -> Self {
+        self.map_style(|s| s.inset_ring_width(w))
+    }
+    fn inset_ring_color(self, c: Color) -> Self {
+        self.map_style(|s| s.inset_ring_color(c))
+    }
+
+    fn ring_white(self) -> Self {
+        self.map_style(|s| s.ring_white())
+    }
+    fn ring_black(self) -> Self {
+        self.map_style(|s| s.ring_black())
+    }
+    fn ring_transparent(self) -> Self {
+        self.map_style(|s| s.ring_transparent())
+    }
+    fn ring_offset_white(self) -> Self {
+        self.map_style(|s| s.ring_offset_white())
+    }
+    fn ring_offset_black(self) -> Self {
+        self.map_style(|s| s.ring_offset_black())
+    }
+    fn inset_ring_white(self) -> Self {
+        self.map_style(|s| s.inset_ring_white())
+    }
+    fn inset_ring_black(self) -> Self {
+        self.map_style(|s| s.inset_ring_black())
+    }
+
+    ext_all_palette_families!(ring);
+    ext_all_palette_families!(ring_offset);
+    ext_all_palette_families!(inset_ring);
+
+    ext_semantic_color!(
+        ring,
+        background,
+        foreground,
+        primary,
+        primary_foreground,
+        secondary,
+        secondary_foreground,
+        muted,
+        muted_foreground,
+        accent,
+        accent_foreground,
+        destructive,
+        destructive_foreground,
+        card,
+        card_foreground,
+        popover,
+        popover_foreground,
+        border,
+        input,
+        ring,
+        chart_1,
+        chart_2,
+        chart_3,
+        chart_4,
+        chart_5,
+        sidebar,
+        sidebar_foreground,
+        sidebar_primary,
+        sidebar_primary_foreground,
+        sidebar_accent,
+        sidebar_accent_foreground,
+        sidebar_border,
+        sidebar_ring,
+        disabled,
+        disabled_foreground,
+    );
+    ext_semantic_color!(
+        ring_offset,
+        background,
+        foreground,
+        primary,
+        primary_foreground,
+        secondary,
+        secondary_foreground,
+        muted,
+        muted_foreground,
+        accent,
+        accent_foreground,
+        destructive,
+        destructive_foreground,
+        card,
+        card_foreground,
+        popover,
+        popover_foreground,
+        border,
+        input,
+        ring,
+        chart_1,
+        chart_2,
+        chart_3,
+        chart_4,
+        chart_5,
+        sidebar,
+        sidebar_foreground,
+        sidebar_primary,
+        sidebar_primary_foreground,
+        sidebar_accent,
+        sidebar_accent_foreground,
+        sidebar_border,
+        sidebar_ring,
+        disabled,
+        disabled_foreground,
+    );
+    ext_semantic_color!(
+        inset_ring,
+        background,
+        foreground,
+        primary,
+        primary_foreground,
+        secondary,
+        secondary_foreground,
+        muted,
+        muted_foreground,
+        accent,
+        accent_foreground,
+        destructive,
+        destructive_foreground,
+        card,
+        card_foreground,
+        popover,
+        popover_foreground,
+        border,
+        input,
+        ring,
+        chart_1,
+        chart_2,
+        chart_3,
+        chart_4,
+        chart_5,
+        sidebar,
+        sidebar_foreground,
+        sidebar_primary,
+        sidebar_primary_foreground,
+        sidebar_accent,
+        sidebar_accent_foreground,
+        sidebar_border,
+        sidebar_ring,
+        disabled,
+        disabled_foreground,
+    );
 
     // Flex
     fn flex_col(self) -> Self {
@@ -3283,6 +3967,21 @@ pub trait StyleExt: Sized {
     }
     fn grow_0(self) -> Self {
         self.map_style(|s| s.grow_0())
+    }
+    fn shrink(self) -> Self {
+        self.map_style(|s| s.shrink())
+    }
+    fn shrink_0(self) -> Self {
+        self.map_style(|s| s.shrink_0())
+    }
+    fn shrink_1(self) -> Self {
+        self.map_style(|s| s.shrink_1())
+    }
+    fn flex_shrink(self, value: f32) -> Self {
+        self.map_style(|s| s.flex_shrink(value))
+    }
+    fn grow_factor(self, value: f32) -> Self {
+        self.map_style(|s| s.grow_factor(value))
     }
     fn justify_start(self) -> Self {
         self.map_style(|s| s.justify_start())
@@ -3787,19 +4486,6 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.or(defaults))
     }
 
-    /// Attach a state-conditional style to this value.
-    ///
-    /// Used by the class-string parser when a token carries a prefix
-    /// like `dark:` or `hover:`. The style is stored, not applied, until
-    /// render time.
-    ///
-    /// ```ignore
-    /// // `dark:bg-slate-900` — attach `bg_slate_900` under the DARK flag.
-    /// style.state_style(
-    ///     StateFlags::DARK,
-    ///     Style::default().bg_slate_900(),
-    /// );
-    /// ```
     fn state_style(self, flags: StateFlags, style: Style) -> Self {
         self.map_style(|mut s| {
             s.states.push((flags, Box::new(style)));
@@ -3807,9 +4493,6 @@ pub trait StyleExt: Sized {
         })
     }
 
-    /// Fold all matching state styles into the base.
-    ///
-    /// Convenience wrapper over [`Style::with_active_states`].
     fn with_active_states(self, active: StateFlags) -> Self {
         self.map_style(|s| s.with_active_states(active))
     }
@@ -5095,30 +5778,16 @@ fn palette_colour(family: &str, shade: &str) -> Option<Color> {
 }
 
 // ==============================================================
-// Opacity helpers
+// Opacity + colour helpers
 // ==============================================================
 
-/// Split a trailing `/N` opacity modifier from a colour token.
-///
-/// Returns `(base, Some(alpha_0_to_1))` when a modifier is present,
-/// otherwise `(rest, None)`.
-///
-/// ```text
-/// split_opacity("destructive/50") -> ("destructive", Some(0.5))
-/// split_opacity("red-500/80")     -> ("red-500",     Some(0.8))
-/// split_opacity("primary")        -> ("primary",     None)
-/// ```
-///
-/// Also accepts the bracket form `/[0.37]` for an explicit `0..1` value.
 fn split_opacity(rest: &str) -> (&str, Option<f32>) {
     if let Some((base, mod_str)) = rest.rsplit_once('/') {
-        // Bracket form: `/[0.37]`
         if let Some(inner) = mod_str.strip_prefix('[').and_then(|x| x.strip_suffix(']')) {
             if let Ok(v) = inner.parse::<f32>() {
                 return (base, Some(v.clamp(0.0, 1.0)));
             }
         }
-        // Percent form: `/50`
         if let Ok(pct) = mod_str.parse::<f32>() {
             return (base, Some((pct / 100.0).clamp(0.0, 1.0)));
         }
@@ -5126,10 +5795,6 @@ fn split_opacity(rest: &str) -> (&str, Option<f32>) {
     (rest, None)
 }
 
-/// Multiply a colour's alpha channel by `factor` if one was supplied.
-///
-/// Returns the colour unchanged when `alpha` is `None`, so the caller can
-/// always pass `Some`/`None` through without branching.
 fn with_alpha(c: Color, alpha: Option<f32>) -> Color {
     match alpha {
         Some(a) => {
@@ -5140,11 +5805,6 @@ fn with_alpha(c: Color, alpha: Option<f32>) -> Color {
     }
 }
 
-/// Look up a semantic token from the active theme.
-///
-/// Returns `None` when `token` isn't a known semantic name. Used by every
-/// colour dispatcher so opacity support is a two-line addition per
-/// dispatcher instead of a thirty-arm `match`.
 fn semantic_colour(token: &str) -> Option<Color> {
     let t = use_cn_theme().read();
     match token {
@@ -5188,6 +5848,37 @@ fn semantic_colour(token: &str) -> Option<Color> {
     }
 }
 
+/// Parse an arbitrary-value hex colour: `[#rgb]`, `[#rrggbb]`, `[#rrggbbaa]`.
+fn parse_hex_color(s: &str) -> Option<Color> {
+    let s = s
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(s);
+    let s = s.strip_prefix('#')?;
+    let (r, g, b, a) = match s.len() {
+        3 => {
+            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
+            (r, g, b, 255)
+        }
+        6 => (
+            u8::from_str_radix(&s[0..2], 16).ok()?,
+            u8::from_str_radix(&s[2..4], 16).ok()?,
+            u8::from_str_radix(&s[4..6], 16).ok()?,
+            255,
+        ),
+        8 => (
+            u8::from_str_radix(&s[0..2], 16).ok()?,
+            u8::from_str_radix(&s[2..4], 16).ok()?,
+            u8::from_str_radix(&s[4..6], 16).ok()?,
+            u8::from_str_radix(&s[6..8], 16).ok()?,
+        ),
+        _ => return None,
+    };
+    Some(Color::from_argb(a, r, g, b))
+}
+
 // ==============================================================
 // Known-token lookup (used by `style_debug`)
 // ==============================================================
@@ -5209,6 +5900,9 @@ fn is_known_token(token: &str) -> bool {
         "flex-1",
         "grow",
         "grow-0",
+        "shrink",
+        "shrink-0",
+        "shrink-1",
         "flex-wrap",
         "content-flex",
         "content-fit",
@@ -5223,8 +5917,10 @@ fn is_known_token(token: &str) -> bool {
         "border",
         "rounded",
         "ring",
+        "inset-ring",
         "block",
         "inline-block",
+        "inline-flex",
         "flex",
         "hidden",
         "visible",
@@ -5341,12 +6037,20 @@ fn is_known_token(token: &str) -> bool {
         "line-clamp-",
         "overflow-x-",
         "overflow-y-",
+        "shrink-",
+        "rotate-",
+        "scale-",
+        "blur-",
+        "origin-",
+        "text-shadow-",
+        "font-stretch-",
         "ring-offset-",
+        "ring-",
+        "inset-ring-",
     ];
 
     let (_, inner) = split_state_prefix(token);
 
-    // From here on, check `inner` not `token`.
     KEYWORDS.contains(&inner) || PREFIXES.iter().any(|p| inner.starts_with(p))
 }
 
@@ -5354,14 +6058,78 @@ fn is_known_token(token: &str) -> bool {
 // style-string parser (private)
 // ==============================================================
 
+/// Parse a numeric length from a token fragment into raw pixels.
+///
+/// Handles bracket-wrapped arbitrary values (`[10px]`, `[1.5rem]`)
+/// and plain numerics (`10`, `10px`).
+///
+/// **Returns raw pixels.** For anything that should become a `Size`
+/// enum variant (so percentages and viewport units stay distinct),
+/// use [`parse_size`] instead.
 fn parse_len(s: &str) -> Option<f32> {
     let s = s.trim();
     let s = s
         .strip_prefix('[')
         .and_then(|x| x.strip_suffix(']'))
         .unwrap_or(s);
-    let s = s.strip_suffix("px").unwrap_or(s);
+
+    if let Some(v) = s.strip_suffix("px") {
+        return v.trim().parse::<f32>().ok();
+    }
+    if let Some(v) = s.strip_suffix("rem") {
+        return v.trim().parse::<f32>().ok().map(|n| n * 16.0);
+    }
+    if let Some(v) = s.strip_suffix("em") {
+        return v.trim().parse::<f32>().ok().map(|n| n * 16.0);
+    }
+    if let Some(v) = s.strip_suffix("pt") {
+        return v.trim().parse::<f32>().ok().map(|n| n * 4.0 / 3.0);
+    }
+    if let Some(v) = s.strip_suffix('%') {
+        return v.trim().parse::<f32>().ok();
+    }
     s.parse::<f32>().ok()
+}
+
+/// Parse an arbitrary value fragment into the correct [`Size`] enum
+/// variant, preserving the semantic difference between pixels,
+/// percentages, viewport units, and the `auto`/`full`/`screen`
+/// keywords.
+fn parse_size(s: &str) -> Option<Size> {
+    let s = s.trim();
+    let s = s
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(s);
+
+    match s {
+        "auto" => return Some(Size::auto()),
+        "full" => return Some(Size::percent(100.0)),
+        "screen" => return Some(Size::window_percent(100.0)),
+        "min" | "max" | "fit" => return Some(Size::auto()),
+        _ => {}
+    }
+
+    if let Some(v) = s.strip_suffix('%') {
+        return v.trim().parse::<f32>().ok().map(Size::percent);
+    }
+    if let Some(v) = s.strip_suffix("vw").or_else(|| s.strip_suffix("vh")) {
+        return v.trim().parse::<f32>().ok().map(Size::window_percent);
+    }
+    if let Some(v) = s.strip_suffix("rem").or_else(|| s.strip_suffix("em")) {
+        return v.trim().parse::<f32>().ok().map(|n| Size::px(n * 16.0));
+    }
+    if let Some(v) = s.strip_suffix("pt") {
+        return v
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|n| Size::px(n * 4.0 / 3.0));
+    }
+    if let Some(v) = s.strip_suffix("px") {
+        return v.trim().parse::<f32>().ok().map(Size::px);
+    }
+    s.parse::<f32>().ok().map(Size::px)
 }
 
 macro_rules! style_scale_dispatch {
@@ -5378,30 +6146,29 @@ macro_rules! style_scale_dispatch {
     };
 }
 
-/// Apply a single class-string token to `this`.
-///
-/// Tokens may carry state prefixes (`dark:`, `hover:`, `focus-visible:`,
-/// …). Prefixed tokens are **stored** on `this` as state-conditional
-/// styles rather than applied immediately, so they can be folded in at
-/// render time when the actual state is known.
 fn style_token<T: StyleExt>(this: T, token: &str) -> T {
     let (flags, inner) = split_state_prefix(token);
 
     if flags.is_empty() {
         apply_unprefixed_token(this, token)
     } else {
-        // Build the state-conditional Style in isolation, then attach it.
         let state_style = apply_unprefixed_token(Style::default(), inner);
         this.state_style(flags, state_style)
     }
 }
 
-/// Apply a token that has no state prefix to `this`.
-///
-/// This is the actual token dispatcher — every existing `match`, every
-/// `strip_prefix`, every colour lookup lives here, unchanged. Renamed
-/// from `style_token` so the new wrapper can sit on top.
 fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
+    // Negative utilities: `-rotate-45`. Strip the leading `-`, run the
+    // positive form, then negate the resulting value.
+    if let Some(rest) = token.strip_prefix('-') {
+        if let Some(r) = rest.strip_prefix("rotate-") {
+            return style_rotate_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("scale-") {
+            return style_scale_negative(this, r);
+        }
+    }
+
     match token {
         "italic" => return this.italic(),
         "not-italic" => return this.not_italic(),
@@ -5418,6 +6185,9 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
         "flex-1" => return this.flex_1(),
         "grow" => return this.grow(),
         "grow-0" => return this.grow_0(),
+        "shrink" => return this.shrink(),
+        "shrink-0" => return this.shrink_0(),
+        "shrink-1" => return this.shrink_1(),
         "flex-wrap" => return this.flex_wrap_content(),
         "content-flex" => return this.content_flex(),
         "content-fit" => return this.content_fit(),
@@ -5432,9 +6202,11 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
         "border" => return this.border(),
         "rounded" => return this.rounded(),
         "ring" => return this.ring(),
+        "inset-ring" => return this.inset_ring(),
         "block" => return this.content_normal(),
         "inline-block" => return this.content_fit(),
         "flex" => return this.content_flex(),
+        "inline-flex" => return this.content_flex(),
         "hidden" => return this.hidden(),
         "visible" => return this.visible(),
         "invisible" => return this.invisible(),
@@ -5503,6 +6275,18 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
     if let Some(r) = token.strip_prefix("order-") {
         return style_order(this, r);
     }
+    if let Some(r) = token.strip_prefix("shrink-") {
+        return style_shrink(this, r);
+    }
+    if let Some(r) = token.strip_prefix("rotate-") {
+        return style_rotate(this, r);
+    }
+    if let Some(r) = token.strip_prefix("scale-") {
+        return style_scale(this, r);
+    }
+    if let Some(r) = token.strip_prefix("blur-") {
+        return style_blur(this, r);
+    }
     if let Some(r) = token.strip_prefix("aspect-") {
         return style_aspect(this, r);
     }
@@ -5551,8 +6335,17 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
     if let Some(r) = token.strip_prefix("overflow-y-") {
         return style_overflow_y(this, r);
     }
+
+    // `ring-offset-` must be matched *before* `ring-` — the latter is a
+    // strict prefix of the former.
     if let Some(r) = token.strip_prefix("ring-offset-") {
         return style_ring_offset(this, r);
+    }
+    if let Some(r) = token.strip_prefix("ring-") {
+        return style_ring(this, r);
+    }
+    if let Some(r) = token.strip_prefix("inset-ring-") {
+        return style_inset_ring(this, r);
     }
 
     if let Some(r) = token.strip_prefix("min-w-") {
@@ -5671,10 +6464,20 @@ fn style_size<T: StyleExt>(this: T, rest: &str) -> T {
     if rest == "full" {
         return this.size_full();
     }
+
     paste! {
         style_scale_dispatch!(this, rest, size;
             0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
     }
+
+    // Arbitrary: `size-[200px]`, `size-[50%]`, `size-[50vw]`.
+    if rest.starts_with('[') {
+        if let Some(size) = parse_size(rest) {
+            return this.width(size.clone()).height(size);
+        }
+    }
+
+    // Bare pixel fallback.
     if let Some(px) = parse_len(rest) {
         return this.size(px);
     }
@@ -5682,15 +6485,118 @@ fn style_size<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_order<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Ok(n) = rest.parse::<i32>() {
+    let raw = rest
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(rest);
+    if let Ok(n) = raw.parse::<i32>() {
         this.order(n)
     } else {
         this
     }
 }
 
+fn style_shrink<T: StyleExt>(this: T, rest: &str) -> T {
+    let raw = rest
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(rest);
+    if let Ok(v) = raw.parse::<f32>() {
+        if v == 0.0 {
+            return this.shrink_0();
+        }
+        return this.flex_shrink(v);
+    }
+    this
+}
+
+fn style_rotate<T: StyleExt>(this: T, rest: &str) -> T {
+    // `rotate-[37.5]` or bare number.
+    if let Some(deg) = parse_len(rest) {
+        return this.rotate(deg);
+    }
+    match rest {
+        "0" => this.rotate(0.0),
+        "1" => this.rotate(1.0),
+        "2" => this.rotate(2.0),
+        "3" => this.rotate(3.0),
+        "6" => this.rotate(6.0),
+        "12" => this.rotate(12.0),
+        "45" => this.rotate(45.0),
+        "90" => this.rotate(90.0),
+        "180" => this.rotate(180.0),
+        _ => this,
+    }
+}
+
+fn style_rotate_negative<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(deg) = parse_len(rest) {
+        return this.rotate(-deg);
+    }
+    match rest {
+        "0" => this.rotate(0.0),
+        "1" => this.rotate(-1.0),
+        "2" => this.rotate(-2.0),
+        "3" => this.rotate(-3.0),
+        "6" => this.rotate(-6.0),
+        "12" => this.rotate(-12.0),
+        "45" => this.rotate(-45.0),
+        "90" => this.rotate(-90.0),
+        "180" => this.rotate(-180.0),
+        _ => this,
+    }
+}
+
+fn style_scale<T: StyleExt>(this: T, rest: &str) -> T {
+    if rest.starts_with('[') {
+        if let Some(v) = parse_len(rest) {
+            return this.scale(v);
+        }
+        return this;
+    }
+    if let Ok(n) = rest.parse::<f32>() {
+        return this.scale(n / 100.0);
+    }
+    this
+}
+
+fn style_scale_negative<T: StyleExt>(this: T, rest: &str) -> T {
+    if rest.starts_with('[') {
+        if let Some(v) = parse_len(rest) {
+            return this.scale(-v);
+        }
+        return this;
+    }
+    if let Ok(n) = rest.parse::<f32>() {
+        return this.scale(-(n / 100.0));
+    }
+    this
+}
+
+fn style_blur<T: StyleExt>(this: T, rest: &str) -> T {
+    let radius = match rest {
+        "none" => 0.0,
+        "sm" => 4.0,
+        "md" => 12.0,
+        "lg" => 16.0,
+        "xl" => 24.0,
+        "2xl" => 40.0,
+        "3xl" => 64.0,
+        "" => 8.0,
+        _ => match parse_len(rest) {
+            Some(v) => v,
+            None => return this,
+        },
+    };
+    this.blur(radius)
+}
+
 fn style_aspect<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Some((a, b)) = rest.split_once('/') {
+    let stripped = rest
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(rest);
+    if let Some((a, b)) = stripped.split_once('/') {
         if let (Ok(n), Ok(d)) = (a.parse::<f32>(), b.parse::<f32>()) {
             if d != 0.0 {
                 return this.aspect(n / d);
@@ -5704,7 +6610,11 @@ fn style_aspect<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_columns<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Ok(n) = rest.parse::<u32>() {
+    let raw = rest
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(rest);
+    if let Ok(n) = raw.parse::<u32>() {
         this.columns(n)
     } else {
         this
@@ -5742,6 +6652,11 @@ fn style_divide_y<T: StyleExt>(this: T, rest: &str) -> T {
 fn style_divide_colour<T: StyleExt>(this: T, rest: &str) -> T {
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.divide_color(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.divide_color(with_alpha(c, alpha));
     }
@@ -5769,6 +6684,11 @@ fn style_outline<T: StyleExt>(this: T, rest: &str) -> T {
 
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.outline_color(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.outline_color(with_alpha(c, alpha));
     }
@@ -5788,12 +6708,95 @@ fn style_outline_offset<T: StyleExt>(this: T, rest: &str) -> T {
     }
 }
 
-fn style_ring_offset<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Some(px) = parse_len(rest) {
-        this.ring_offset(px)
-    } else {
-        this
+// ---------- Ring dispatchers (Tailwind v4) ----------
+
+fn style_ring<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "0" => return this.ring_0(),
+        "1" => return this.ring_1(),
+        "2" => return this.ring_2(),
+        "3" => return this.ring_3(),
+        "4" => return this.ring_4(),
+        "6" => return this.ring_6(),
+        "8" => return this.ring_8(),
+        _ => {}
     }
+    if let Some(px) = parse_len(rest) {
+        return this.ring_width(px);
+    }
+    let (rest, alpha) = split_opacity(rest);
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.ring_color(with_alpha(c, alpha));
+        }
+    }
+    if let Some(c) = semantic_colour(rest) {
+        return this.ring_color(with_alpha(c, alpha));
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.ring_color(with_alpha(c, alpha));
+        }
+    }
+    this
+}
+
+fn style_ring_offset<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "0" => return this.ring_offset_0(),
+        "1" => return this.ring_offset_1(),
+        "2" => return this.ring_offset_2(),
+        "4" => return this.ring_offset_4(),
+        "8" => return this.ring_offset_8(),
+        _ => {}
+    }
+    if let Some(px) = parse_len(rest) {
+        return this.ring_offset(px);
+    }
+    let (rest, alpha) = split_opacity(rest);
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.ring_offset_color(with_alpha(c, alpha));
+        }
+    }
+    if let Some(c) = semantic_colour(rest) {
+        return this.ring_offset_color(with_alpha(c, alpha));
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.ring_offset_color(with_alpha(c, alpha));
+        }
+    }
+    this
+}
+
+fn style_inset_ring<T: StyleExt>(this: T, rest: &str) -> T {
+    match rest {
+        "0" => return this.inset_ring_0(),
+        "1" => return this.inset_ring_1(),
+        "2" => return this.inset_ring_2(),
+        "4" => return this.inset_ring_4(),
+        "8" => return this.inset_ring_8(),
+        _ => {}
+    }
+    if let Some(px) = parse_len(rest) {
+        return this.inset_ring_width(px);
+    }
+    let (rest, alpha) = split_opacity(rest);
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.inset_ring_color(with_alpha(c, alpha));
+        }
+    }
+    if let Some(c) = semantic_colour(rest) {
+        return this.inset_ring_color(with_alpha(c, alpha));
+    }
+    if let Some((family, shade)) = rest.rsplit_once('-') {
+        if let Some(c) = palette_colour(family, shade) {
+            return this.inset_ring_color(with_alpha(c, alpha));
+        }
+    }
+    this
 }
 
 fn style_decoration<T: StyleExt>(this: T, rest: &str) -> T {
@@ -5811,6 +6814,11 @@ fn style_decoration<T: StyleExt>(this: T, rest: &str) -> T {
 
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.decoration_color(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.decoration_color(with_alpha(c, alpha));
     }
@@ -5873,6 +6881,11 @@ fn style_accent<T: StyleExt>(this: T, rest: &str) -> T {
 
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.accent_color(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.accent_color(with_alpha(c, alpha));
     }
@@ -5887,6 +6900,11 @@ fn style_accent<T: StyleExt>(this: T, rest: &str) -> T {
 fn style_caret<T: StyleExt>(this: T, rest: &str) -> T {
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.caret_color(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.caret_color(with_alpha(c, alpha));
     }
@@ -5903,6 +6921,11 @@ fn style_caret<T: StyleExt>(this: T, rest: &str) -> T {
 fn style_bg<T: StyleExt>(this: T, rest: &str) -> T {
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.background(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.background(with_alpha(c, alpha));
     }
@@ -5915,7 +6938,6 @@ fn style_bg<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_text<T: StyleExt>(this: T, rest: &str) -> T {
-    // Size and alignment tokens don't take a `/N` modifier.
     match rest {
         "xs" => return this.text_xs(),
         "sm" => return this.text_sm(),
@@ -5937,8 +6959,19 @@ fn style_text<T: StyleExt>(this: T, rest: &str) -> T {
         _ => {}
     }
 
+    if rest.starts_with('[') && !rest.starts_with("[#") {
+        if let Some(px) = parse_len(rest) {
+            return this.font_size(px);
+        }
+    }
+
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.color(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.color(with_alpha(c, alpha));
     }
@@ -5951,7 +6984,6 @@ fn style_text<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
-    // Width / style keywords don't accept `/N`.
     match rest {
         "" => return this.border(),
         "0" => return this.border_0(),
@@ -5971,7 +7003,6 @@ fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
         "y" => return this.border_y(1.0),
         _ => {}
     }
-    // Per-side width: `border-t-2`.
     if let Some((side, val)) = rest.split_once('-') {
         if let Some(px) = parse_len(val) {
             match side {
@@ -5985,13 +7016,17 @@ fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
             }
         }
     }
-    // Bare width: `border-3`.
     if let Some(px) = parse_len(rest) {
         return this.border_width(px);
     }
 
     let (rest, alpha) = split_opacity(rest);
 
+    if rest.starts_with('[') {
+        if let Some(c) = parse_hex_color(rest) {
+            return this.border_color(with_alpha(c, alpha));
+        }
+    }
     if let Some(c) = semantic_colour(rest) {
         return this.border_color(with_alpha(c, alpha));
     }
@@ -6088,12 +7123,21 @@ fn style_shadow<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_opacity<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Ok(v) = rest.parse::<f32>() {
-        let v = if v > 1.0 { v / 100.0 } else { v };
-        this.opacity(v.clamp(0.0, 1.0))
-    } else {
-        this
+    let raw = rest
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(rest);
+    let raw = raw.strip_suffix('%').unwrap_or(raw);
+
+    if let Ok(v) = raw.parse::<f32>() {
+        let v = if rest.contains('%') || v > 1.0 {
+            v / 100.0
+        } else {
+            v
+        };
+        return this.opacity(v.clamp(0.0, 1.0));
     }
+    this
 }
 
 fn style_justify<T: StyleExt>(this: T, rest: &str) -> T {
@@ -6139,7 +7183,11 @@ fn style_content<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_z<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Ok(v) = rest.parse::<i32>() {
+    let raw = rest
+        .strip_prefix('[')
+        .and_then(|x| x.strip_suffix(']'))
+        .unwrap_or(rest);
+    if let Ok(v) = raw.parse::<i32>() {
         this.z_index(v)
     } else {
         this
@@ -6181,17 +7229,44 @@ style_scale!(style_mt, mt; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20
 style_scale!(style_mr, mr; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
 style_scale!(style_mb, mb; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
 style_scale!(style_ml, ml; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-style_scale!(style_min_w, min_w; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-style_scale!(style_min_h, min_h; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-style_scale!(style_max_w, max_w; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-style_scale!(style_max_h, max_h; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+
+fn style_min_w<T: StyleExt>(this: T, rest: &str) -> T {
+    style_scale_dispatch!(this, rest, min_w;
+        0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    if let Some(size) = parse_size(rest) {
+        return this.min_width(size);
+    }
+    this
+}
+
+fn style_min_h<T: StyleExt>(this: T, rest: &str) -> T {
+    style_scale_dispatch!(this, rest, min_h;
+        0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    if let Some(size) = parse_size(rest) {
+        return this.min_height(size);
+    }
+    this
+}
+
+fn style_max_w<T: StyleExt>(this: T, rest: &str) -> T {
+    style_scale_dispatch!(this, rest, max_w;
+        0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    if let Some(size) = parse_size(rest) {
+        return this.max_width(size);
+    }
+    this
+}
+
+fn style_max_h<T: StyleExt>(this: T, rest: &str) -> T {
+    style_scale_dispatch!(this, rest, max_h;
+        0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    if let Some(size) = parse_size(rest) {
+        return this.max_height(size);
+    }
+    this
+}
 
 fn style_w<T: StyleExt>(this: T, rest: &str) -> T {
-    match rest {
-        "full" | "screen" => return this.w_full(),
-        "auto" => return this.w_auto(),
-        _ => {}
-    }
     if let Some((num, den)) = rest.split_once('/') {
         if let (Ok(n), Ok(d)) = (num.parse::<f32>(), den.parse::<f32>()) {
             if d != 0.0 {
@@ -6199,24 +7274,18 @@ fn style_w<T: StyleExt>(this: T, rest: &str) -> T {
             }
         }
     }
-    style_scale_dispatch!(this, rest, w; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-    if let Some(px) = parse_len(rest) {
-        return this.w(px);
+
+    style_scale_dispatch!(this, rest, w;
+        0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+
+    if let Some(size) = parse_size(rest) {
+        return this.width(size);
     }
-    if let Some(p) = rest.strip_suffix('%') {
-        if let Ok(pct) = p.parse::<f32>() {
-            return this.w_percent(pct);
-        }
-    }
+
     this
 }
 
 fn style_h<T: StyleExt>(this: T, rest: &str) -> T {
-    match rest {
-        "full" | "screen" => return this.h_full(),
-        "auto" => return this.h_auto(),
-        _ => {}
-    }
     if let Some((num, den)) = rest.split_once('/') {
         if let (Ok(n), Ok(d)) = (num.parse::<f32>(), den.parse::<f32>()) {
             if d != 0.0 {
@@ -6224,14 +7293,13 @@ fn style_h<T: StyleExt>(this: T, rest: &str) -> T {
             }
         }
     }
-    style_scale_dispatch!(this, rest, h; 0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-    if let Some(px) = parse_len(rest) {
-        return this.h(px);
+
+    style_scale_dispatch!(this, rest, h;
+        0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+
+    if let Some(size) = parse_size(rest) {
+        return this.height(size);
     }
-    if let Some(p) = rest.strip_suffix('%') {
-        if let Ok(pct) = p.parse::<f32>() {
-            return this.h_percent(pct);
-        }
-    }
+
     this
 }

@@ -14,12 +14,11 @@ const SUPPORTED: &[&str] = &[
     "key",
     "style",
     "event_handlers",
-    "corner_radius",
+    "accessibility",
 ];
 
 fn dependencies_of(name: &str) -> &'static [&'static str] {
     match name {
-        "corner_radius" => &["style"],
         _ => &[],
     }
 }
@@ -55,7 +54,7 @@ pub fn field_names_for(name: &str) -> &'static [&'static str] {
         "key" => &["key"],
         "style" => &["style"],
         "event_handlers" => &["event_handlers"],
-        "corner_radius" => &[],
+        "accessibility" => &["accessibility"],
         _ => &[],
     }
 }
@@ -87,15 +86,15 @@ fn extension_for(
         "children" => Extension {
             fields: vec![quote! {
                 /// Child elements attached to this component.
-                pub children: ::std::vec::Vec<::freyacn::Element>
+                pub children: ::std::vec::Vec<::freyacn::prelude::Element>
             }],
             inits: vec![quote! { children: ::std::vec::Vec::new() }],
             locals: vec![quote! {
-                let children: &::std::vec::Vec<::freyacn::Element> = &self.children;
+                let children: &::std::vec::Vec<::freyacn::prelude::Element> = &self.children;
             }],
             impls: vec![quote! {
-                impl ::freyacn::ChildrenExt for #struct_name {
-                    fn get_children(&mut self) -> &mut ::std::vec::Vec<::freyacn::Element> {
+                impl ::freyacn::prelude::ChildrenExt for #struct_name {
+                    fn get_children(&mut self) -> &mut ::std::vec::Vec<::freyacn::prelude::Element> {
                         &mut self.children
                     }
                 }
@@ -105,16 +104,22 @@ fn extension_for(
         "key" => Extension {
             fields: vec![quote! {
                 /// The element's diff key.
-                pub key: ::freyacn::DiffKey
+                pub key: ::freyacn::prelude::DiffKey
             }],
-            inits: vec![quote! { key: ::freyacn::DiffKey::None }],
+            inits: vec![quote! { key: ::freyacn::prelude::DiffKey::None }],
             locals: vec![quote! {
-                let key: &::freyacn::DiffKey = &self.key;
+                let key: &::freyacn::prelude::DiffKey = &self.key;
             }],
             impls: vec![quote! {
-                impl ::freyacn::KeyExt for #struct_name {
-                    fn write_key(&mut self) -> &mut ::freyacn::DiffKey {
+                impl ::freyacn::prelude::KeyExt for #struct_name {
+                    fn write_key(&mut self) -> &mut ::freyacn::prelude::DiffKey {
                         &mut self.key
+                    }
+                }
+
+                impl #struct_name {
+                    fn render_key(&self) -> DiffKey {
+                        self.key.clone().or(self.default_key())
                     }
                 }
             }],
@@ -133,24 +138,24 @@ fn extension_for(
             // that.
             let locals = if variant_field_names.is_empty() {
                 vec![quote! {
-                    let style: &::freyacn::Style = &self.style;
+                    let style: &::freyacn::prelude::Style = &self.style;
                 }]
             } else {
                 let merges = variant_field_names.iter().map(|field| {
                     quote! {
                         __freyacn_base = __freyacn_base.merge(
-                            ::freyacn::Variant::resolve(&self.#field)
+                            ::freyacn::prelude::Variant::resolve(&self.#field)
                         );
                     }
                 });
                 vec![quote! {
-                    let __freyacn_merged_style: ::freyacn::Style = {
+                    let __freyacn_merged_style: ::freyacn::prelude::Style = {
                         let mut __freyacn_base =
-                            <::freyacn::Style as ::core::default::Default>::default();
+                            <::freyacn::prelude::Style as ::core::default::Default>::default();
                         #(#merges)*
                         __freyacn_base.merge(self.style.clone())
                     };
-                    let style: &::freyacn::Style = &__freyacn_merged_style;
+                    let style: &::freyacn::prelude::Style = &__freyacn_merged_style;
                 }]
             };
 
@@ -162,15 +167,15 @@ fn extension_for(
                     /// Variant-derived styles are merged on top of this at
                     /// render time — see the component macro's generated
                     /// `render` body for details.
-                    pub style: ::freyacn::Style
+                    pub style: ::freyacn::prelude::Style
                 }],
                 inits: vec![quote! {
-                    style: <::freyacn::Style as ::core::default::Default>::default()
+                    style: <::freyacn::prelude::Style as ::core::default::Default>::default()
                 }],
                 locals,
                 impls: vec![quote! {
-                    impl ::freyacn::StyleExt for #struct_name {
-                        fn get_style(&mut self) -> &mut ::freyacn::Style {
+                    impl ::freyacn::prelude::StyleExt for #struct_name {
+                        fn get_style(&mut self) -> &mut ::freyacn::prelude::Style {
                             &mut self.style
                         }
                     }
@@ -182,25 +187,25 @@ fn extension_for(
             fields: vec![quote! {
                 /// Event-handler registry.
                 pub event_handlers:
-                    ::freyacn::FxHashMap<::freyacn::EventName, ::freyacn::EventHandlerType>
+                    ::freyacn::prelude::FxHashMap<::freyacn::prelude::EventName, ::freyacn::prelude::EventHandlerType>
             }],
             inits: vec![quote! {
                 event_handlers:
-                    <::freyacn::FxHashMap<_, _> as ::core::default::Default>::default()
+                    <::freyacn::prelude::FxHashMap<_, _> as ::core::default::Default>::default()
             }],
             locals: vec![quote! {
-                let event_handlers: &::freyacn::FxHashMap<
-                    ::freyacn::EventName,
-                    ::freyacn::EventHandlerType,
+                let event_handlers: &::freyacn::prelude::FxHashMap<
+                    ::freyacn::prelude::EventName,
+                    ::freyacn::prelude::EventHandlerType,
                 > = &self.event_handlers;
             }],
             impls: vec![quote! {
-                impl ::freyacn::EventHandlersExt for #struct_name {
+                impl ::freyacn::prelude::EventHandlersExt for #struct_name {
                     fn get_event_handlers(
                         &mut self,
-                    ) -> &mut ::freyacn::FxHashMap<
-                        ::freyacn::EventName,
-                        ::freyacn::EventHandlerType,
+                    ) -> &mut ::freyacn::prelude::FxHashMap<
+                        ::freyacn::prelude::EventName,
+                        ::freyacn::prelude::EventHandlerType,
                     > {
                         &mut self.event_handlers
                     }
@@ -208,14 +213,30 @@ fn extension_for(
             }],
         },
 
-        "corner_radius" => Extension {
-            fields: vec![],
-            inits: vec![],
-            locals: vec![],
+        // -------------------------------------------------------------------
+        // accessibility  →  freyacn::AccessibilityExt
+        // -------------------------------------------------------------------
+        "accessibility" => Extension {
+            fields: vec![quote! {
+                /// Accessibility data for this element.
+                ///
+                /// Populated via the [`AccessibilityExt`] builder methods
+                /// (`a11y_role`, `a11y_alt`, `a11y_focusable`, …) and
+                /// forwarded to the primitive when the component renders.
+                pub accessibility: ::freyacn::prelude::AccessibilityData
+            }],
+            inits: vec![quote! {
+                accessibility: <::freyacn::prelude::AccessibilityData as ::core::default::Default>::default()
+            }],
+            locals: vec![quote! {
+                let accessibility: &::freyacn::prelude::AccessibilityData = &self.accessibility;
+            }],
             impls: vec![quote! {
-                impl ::freyacn::CornerRadiusExt for #struct_name {
-                    fn with_corner_radius(self, corner_radius: f32) -> Self {
-                        ::freyacn::StyleExt::corner_radius(self, corner_radius)
+                impl ::freyacn::prelude::AccessibilityExt for #struct_name {
+                    fn get_accessibility_data(
+                        &mut self,
+                    ) -> &mut ::freyacn::prelude::AccessibilityData {
+                        &mut self.accessibility
                     }
                 }
             }],

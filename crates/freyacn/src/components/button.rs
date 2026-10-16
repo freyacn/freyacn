@@ -1,9 +1,6 @@
 //! Button component — shadcn/ui styling on top of Freya's `Button`.
 
-use freya::prelude::*;
-use freya_core::integration::Overflow::Clip;
-use freyacn::*;
-
+use crate::prelude::*;
 // ==============================================================
 // Variants
 // ==============================================================
@@ -12,20 +9,24 @@ use freyacn::*;
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
-    #[variant("bg-primary text-primary-foreground")]
+    #[variant("bg-primary text-primary-foreground hover:bg-primary/80")]
     #[default]
     Default,
 
-    #[variant("bg-background border border-border")]
+    #[variant(
+        "border-border bg-background hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+    )]
     Outline,
 
     #[variant("bg-secondary text-secondary-foreground")]
     Secondary,
 
-    #[variant("text-foreground")]
+    #[variant("hover:bg-muted hover:text-foreground dark:hover:bg-muted/50")]
     Ghost,
 
-    #[variant("bg-destructive/10 text-destructive-foreground")]
+    #[variant(
+        "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40"
+    )]
     Destructive,
 
     #[variant("text-primary underline underline-offset-4")]
@@ -36,29 +37,29 @@ pub enum ButtonVariant {
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonSize {
-    #[variant("h-8 gap-1_5 px-2_5 text-sm")]
+    #[variant("h-8 gap-1.5 px-2.5")]
     #[default]
     Default,
 
     #[variant("h-6 gap-1 rounded-md px-2 text-xs")]
     Xs,
 
-    #[variant("h-7 gap-1 rounded-md px-2_5 text-sm")]
+    #[variant("h-7 gap-1 rounded-md px-2.5 text-[0.8rem]")]
     Sm,
 
-    #[variant("h-9 gap-1_5 px-2_5 text-sm")]
+    #[variant("h-9 gap-1.5 px-2.5 text-sm")]
     Lg,
 
-    #[variant("w-8 h-8")]
+    #[variant("size-8")]
     Icon,
 
-    #[variant("w-6 h-6 rounded-md")]
+    #[variant("size-6 rounded-md")]
     IconXs,
 
-    #[variant("w-7 h-7 rounded-md")]
+    #[variant("size-7 rounded-md")]
     IconSm,
 
-    #[variant("w-9 h-9")]
+    #[variant("size-9")]
     IconLg,
 }
 
@@ -83,7 +84,7 @@ pub enum ButtonSize {
     props(
         disabled: bool = false,
         focusable: bool = true,
-        on_hover: String,
+        on_hover: EventHandler<Event<PointerEventData>> = EventHandler::from(|_: Event<PointerEventData>| {}),
     ),
     variants(
         variant: ButtonVariant = ButtonVariant::Default,
@@ -93,95 +94,19 @@ pub enum ButtonSize {
 )]
 #[derive(Clone, PartialEq)]
 pub fn Button() {
-    let theme = use_cn_theme().read();
-    let mut hovering = use_state(|| false);
-    let a11y_id = use_a11y();
-    let focus = use_focus(a11y_id);
-    let disabled = use_reactive(disabled);
-
-    /*
-    let merged = Style::default()
+    let style = style
+        .clone()
+        .style(
+            "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+        )
         .merge(variant.resolve())
-        .merge(size.resolve())
-        .merge(style.clone());
+        .merge(size.resolve());
 
-    // ── Compute the active flag set from runtime state ──
-    let mut active = StateFlags::NONE;
-    if theme.is_dark           { active = active.or(StateFlags::DARK); }
-    if *hovering.read()        { active = active.or(StateFlags::HOVER); }
-    if focus.is_focused()      { active = active.or(StateFlags::FOCUS_VISIBLE); }
-    if *disabled               { active = active.or(StateFlags::DISABLED); }
-
-    // ── Fold matching state styles into the base ──
-    let effective = merged.with_active_states(active);
-
-    // ── From here, `effective` is exactly what you had before ──
-    let bg         = effective.background.clone().and_then(fill_to_color)
-                       .unwrap_or(Color::TRANSPARENT);
-    let fg         = effective.text_color.unwrap_or(theme.foreground);
-    let border     = effective.border_color.unwrap_or(Color::TRANSPARENT);
-    let focus_ring = effective.ring_color.unwrap_or(fg);
-    let radius     = effective.corner_radius.unwrap_or_default();
-
-    drop(theme);
-
-     */
-
-    let mut hover_style = Style::default();
-    let mut focus_style = Style::default()
-        .ring_width(3.0)
-        .ring_color(apply_opacity(theme.ring, 0.5));
-
-    // ── Merge variant + size + user overrides ──
-    let mut style = Style::default()
-        .overflow(Clip)
-        .merge(variant.resolve())
-        .merge(size.resolve())
-        .merge(style.clone());
-
-    match variant {
-        ButtonVariant::Default => {
-            hover_style = hover_style.background(apply_opacity(theme.primary, 0.8));
-        }
-        ButtonVariant::Outline => {
-            hover_style = hover_style.bg_muted().text_foreground();
-
-            if theme.is_dark {
-                style = style.background(apply_opacity(theme.input, 0.3));
-                hover_style = hover_style.background(apply_opacity(theme.input, 0.5));
-            }
-        }
-        ButtonVariant::Secondary => {
-            hover_style =
-                hover_style.background(blend_colors(theme.secondary, theme.foreground, 0.05));
-        }
-        ButtonVariant::Ghost => {
-            hover_style = hover_style.bg_muted().text_foreground();
-
-            if theme.is_dark {
-                hover_style = hover_style.background(apply_opacity(theme.muted, 0.5));
-            }
-        }
-        ButtonVariant::Destructive => {
-            style = style.background(apply_opacity(theme.destructive, 0.1));
-            hover_style = hover_style.background(apply_opacity(theme.destructive, 0.2));
-            focus_style = focus_style
-                .border_color(apply_opacity(theme.destructive, 0.4))
-                .ring_color(apply_opacity(theme.destructive, 0.2));
-
-            if theme.is_dark {
-                style = style.background(apply_opacity(theme.destructive, 0.2));
-                hover_style = hover_style.background(apply_opacity(theme.destructive, 0.3));
-                focus_style = focus_style.ring_color(apply_opacity(theme.destructive, 0.4));
-            }
-        }
-        ButtonVariant::Link => {
-            hover_style = hover_style.underline();
-        }
-        _ => {}
-    }
-
-    rect()
-        .overflow(style.overflow.unwrap().clone())
-        .a11y_id(a11y_id)
+    Div()
+        .children(children.clone())
+        .with_event_handlers(event_handlers.clone())
+        .merge_style(style)
+        .disabled(disabled.clone())
+        .on_hover(on_hover.clone())
+        .focusable(focusable.clone())
 }

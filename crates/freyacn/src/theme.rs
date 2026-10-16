@@ -28,7 +28,7 @@
 //! # use freya::prelude::*;
 //! fn App() -> impl IntoElement {
 //!     // Create a light theme with a slate base and blue accent.
-//!     let theme = Theme::base_color("slate", false).theme_color("blue");
+//!     let theme = Theme::light().base_color("slate").theme_color("blue");
 //!     use_init_cn_theme(theme);
 //!
 //!     // Your UI…
@@ -61,7 +61,7 @@
 //! # use freyacn::theme::*;
 //! # use freya::prelude::*;
 //! fn DarkPanel() -> impl IntoElement {
-//!     let dark_theme = Theme::base_color("zinc", true).theme_color("rose");
+//!     let dark_theme = Theme::dark().base_color("zinc").theme_color("rose");
 //!     use_provide_cn_theme(dark_theme);
 //!     // All children here will see the dark theme.
 //!     rect()
@@ -819,7 +819,7 @@ impl Default for Colors {
 /// # Example
 /// ```
 /// # use freyacn::theme::Theme;
-/// let theme = Theme::base_color("slate", false).theme_color("blue");
+/// let theme = Theme::light().base_color("slate").theme_color("blue");
 /// let background = theme.background;
 /// let primary = theme.primary;
 /// ```
@@ -941,23 +941,77 @@ impl Theme {
         0.299 * r + 0.587 * g + 0.114 * b
     }
 
-    /// Build a theme from a **base palette** (neutral colours) and a dark/light mode.
+    // ------------------------------------------------------------------
+    // Fluent entry points
+    // ------------------------------------------------------------------
+
+    /// Start with a **light** theme: default `slate` base and `slate` accent.
     ///
-    /// This sets the `background`, `foreground`, `muted`, `muted_foreground`, `border`,
-    /// `input`, `card`, `popover`, `secondary`, `secondary_foreground` to the appropriate
-    /// shades of the chosen base palette.
+    /// Chain `.base_color(...)` to change the neutral surfaces and
+    /// `.theme_color(...)` to pick the accent. Order matters:
+    /// `.base_color` resets the accent, so call it first.
     ///
-    /// The `primary`, `primary_foreground`, `accent`, `accent_foreground`, and `ring`
-    /// are initially set to the base palette's primary shades (900/50 for light,
-    /// 50/900 for dark). You can override them later with `.theme_color()`.
+    /// ```ignore
+    /// Theme::light().base_color("zinc").theme_color("blue")
+    /// ```
+    pub fn light() -> Self {
+        Self::from_base("slate", false)
+    }
+
+    /// Start with a **dark** theme: default `slate` base and `slate` accent.
     ///
-    /// # Arguments
-    /// - `base`: the name of the base palette (e.g., `"slate"`, `"stone"`, `"neutral"`).
-    /// - `dark`: whether the theme should be dark (`true`) or light (`false`).
+    /// Chain `.base_color(...)` to change the neutral surfaces and
+    /// `.theme_color(...)` to pick the accent. Order matters:
+    /// `.base_color` resets the accent, so call it first.
+    ///
+    /// ```ignore
+    /// Theme::dark().base_color("zinc").theme_color("rose")
+    /// ```
+    pub fn dark() -> Self {
+        Self::from_base("slate", true)
+    }
+
+    /// Change the base palette, keeping the current light/dark mode.
+    ///
+    /// Resets `primary` / `accent` / `ring` to the new base's default
+    /// shades. Call `.theme_color(...)` **after** this to reapply an
+    /// accent.
+    ///
+    /// ```ignore
+    /// Theme::dark()
+    ///     .base_color("stone")   // rebuild the neutral surfaces
+    ///     .theme_color("rose")   // then pick the accent
+    /// ```
     ///
     /// # Panics
-    /// Panics if the `base` palette name is unknown.
-    pub fn base_color(base: &str, dark: bool) -> Self {
+    /// Panics if `base` is not a known palette name.
+    pub fn base_color(self, base: &str) -> Self {
+        Self::from_base(base, self.is_dark)
+    }
+
+    // ------------------------------------------------------------------
+    // Underlying constructor
+    // ------------------------------------------------------------------
+
+    /// Build a theme from a **base palette** and an explicit dark/light flag.
+    ///
+    /// This is the underlying constructor. Prefer `Theme::light()` /
+    /// `Theme::dark()` combined with `.base_color(...)` for a cleaner
+    /// call site.
+    ///
+    /// Sets `background`, `foreground`, `muted`, `muted_foreground`,
+    /// `border`, `input`, `card`, `popover`, `secondary`, and
+    /// `secondary_foreground` to the appropriate shades of the chosen
+    /// base palette.
+    ///
+    /// `primary`, `primary_foreground`, `accent`, `accent_foreground`,
+    /// and `ring` start at the base palette's default shades
+    /// (`900/50` for light, `50/900` for dark). Override them with
+    /// `.theme_color(...)`.
+    ///
+    /// # Panics
+    /// Panics if `base` is not a known palette name.
+    pub fn from_base(base: &str, dark: bool) -> Self {
         let colors = Colors::default();
         let (bg, fg, muted, muted_fg, border, input, card, popover, secondary, secondary_fg) =
             if dark {
@@ -1291,6 +1345,9 @@ impl Theme {
     /// The `primary_foreground` is automatically set to either `white` or `black`
     /// based on the luminance of the chosen primary colour to ensure sufficient contrast.
     ///
+    /// Chain this **after** `.base_color(...)`, because `.base_color(...)`
+    /// resets `primary`/`accent`/`ring` to the base palette's own defaults.
+    ///
     /// # Arguments
     /// - `theme`: the name of the accent palette (e.g., `"blue"`, `"red"`, `"violet"`).
     ///
@@ -1387,44 +1444,59 @@ impl Theme {
     }
 
     // ------------------------------------------------------------------------
-    // Convenience constructors for each base palette, accepting a theme.
+    // Base palette shortcuts (fluent)
     // ------------------------------------------------------------------------
 
-    /// Creates a theme with the `stone` base and the given accent theme.
-    pub fn stone(dark: bool, theme: &str) -> Self {
-        Self::base_color("stone", dark).theme_color(theme)
+    /// Set the base palette to `stone`.
+    ///
+    /// Shorthand for `self.base_color("stone")`. Chain
+    /// `.theme_color(...)` afterwards to pick the accent.
+    ///
+    /// ```ignore
+    /// Theme::dark().stone().theme_color("amber")
+    /// ```
+    pub fn stone(self) -> Self {
+        self.base_color("stone")
     }
-    /// Creates a theme with the `mauve` base and the given accent theme.
-    pub fn mauve(dark: bool, theme: &str) -> Self {
-        Self::base_color("mauve", dark).theme_color(theme)
+
+    /// Set the base palette to `mauve`.
+    pub fn mauve(self) -> Self {
+        self.base_color("mauve")
     }
-    /// Creates a theme with the `olive` base and the given accent theme.
-    pub fn olive(dark: bool, theme: &str) -> Self {
-        Self::base_color("olive", dark).theme_color(theme)
+
+    /// Set the base palette to `olive`.
+    pub fn olive(self) -> Self {
+        self.base_color("olive")
     }
-    /// Creates a theme with the `mist` base and the given accent theme.
-    pub fn mist(dark: bool, theme: &str) -> Self {
-        Self::base_color("mist", dark).theme_color(theme)
+
+    /// Set the base palette to `mist`.
+    pub fn mist(self) -> Self {
+        self.base_color("mist")
     }
-    /// Creates a theme with the `taupe` base and the given accent theme.
-    pub fn taupe(dark: bool, theme: &str) -> Self {
-        Self::base_color("taupe", dark).theme_color(theme)
+
+    /// Set the base palette to `taupe`.
+    pub fn taupe(self) -> Self {
+        self.base_color("taupe")
     }
-    /// Creates a theme with the `zinc` base and the given accent theme.
-    pub fn zinc(dark: bool, theme: &str) -> Self {
-        Self::base_color("zinc", dark).theme_color(theme)
+
+    /// Set the base palette to `slate` (the default).
+    pub fn slate(self) -> Self {
+        self.base_color("slate")
     }
-    /// Creates a theme with the `neutral` base and the given accent theme.
-    pub fn neutral(dark: bool, theme: &str) -> Self {
-        Self::base_color("neutral", dark).theme_color(theme)
+
+    /// Set the base palette to `gray`.
+    pub fn gray(self) -> Self {
+        self.base_color("gray")
     }
-    /// Creates a theme with the `slate` base and the given accent theme.
-    pub fn slate(dark: bool, theme: &str) -> Self {
-        Self::base_color("slate", dark).theme_color(theme)
+
+    /// Set the base palette to `zinc`.
+    pub fn zinc(self) -> Self {
+        self.base_color("zinc")
     }
-    /// Creates a theme with the `gray` base and the given accent theme.
-    pub fn gray(dark: bool, theme: &str) -> Self {
-        Self::base_color("gray", dark).theme_color(theme)
+
+    /// Set the base palette to `neutral`.
+    pub fn neutral(self) -> Self {
+        self.base_color("neutral")
     }
 
     // ------------------------------------------------------------------------
@@ -1479,7 +1551,7 @@ impl Theme {
 /// # use freyacn::theme::{use_init_cn_theme, Theme};
 /// # use freya::prelude::*;
 /// fn App() -> impl IntoElement {
-///     let theme = Theme::base_color("slate", false).theme_color("blue");
+///     let theme = Theme::light().base_color("slate").theme_color("blue");
 ///     use_init_cn_theme(theme);
 ///
 ///     // Your app components...
@@ -1510,7 +1582,7 @@ pub fn use_init_cn_theme(theme: Theme) -> State<Theme> {
 /// # use freyacn::theme::{use_provide_cn_theme, Theme};
 /// # use freya::prelude::*;
 /// fn DarkSubtree() -> impl IntoElement {
-///     let dark_theme = Theme::base_color("zinc", true).theme_color("rose");
+///     let dark_theme = Theme::dark().base_color("zinc").theme_color("rose");
 ///     use_provide_cn_theme(dark_theme);
 ///     // Children here will see the dark theme.
 /// }
@@ -1559,9 +1631,5 @@ pub fn use_cn_theme() -> State<Theme> {
 pub fn get_cn_theme_or_default() -> Readable<Theme> {
     try_consume_context::<State<Theme>>()
         .map(|v| v.into())
-        .unwrap_or_else(|| {
-            Theme::base_color("slate", false)
-                .theme_color("slate")
-                .into()
-        })
+        .unwrap_or_else(|| Theme::light().theme_color("slate").into())
 }

@@ -668,9 +668,9 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // =====================================================================
 
     let component_trait_impl = quote! {
-        impl ::freyacn::Component for #struct_ident {
+        impl ::freyacn::prelude::Component for #struct_ident {
             #[doc = #render_doc]
-            fn render(&self) -> impl ::freyacn::IntoElement {
+            fn render(&self) -> impl ::freyacn::prelude::IntoElement {
                 #(#ext_local_bindings)*
                 #(#prop_bindings)*
                 #body

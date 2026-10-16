@@ -81,16 +81,16 @@ pub fn parse_variant(_attr: TokenStream2, item: TokenStream2) -> syn::Result<Tok
             /// Lets callers write `v.resolve()` without importing the
             /// `Variant` trait. Must be called inside a Freya render
             /// context — reads the active theme.
-            pub fn resolve(&self) -> ::freyacn::Style {
-                <Self as ::freyacn::Variant>::resolve(self)
+            pub fn resolve(&self) -> ::freyacn::prelude::Style {
+                <Self as ::freyacn::prelude::Variant>::resolve(self)
             }
         }
 
-        impl ::freyacn::Variant for #enum_ident {
-            fn resolve(&self) -> ::freyacn::Style {
+        impl ::freyacn::prelude::Variant for #enum_ident {
+            fn resolve(&self) -> ::freyacn::prelude::Style {
                 let s =
-                    <::freyacn::Style as ::core::default::Default>::default();
-                ::freyacn::StyleExt::style(s, self.style_str())
+                    <::freyacn::prelude::Style as ::core::default::Default>::default();
+                ::freyacn::prelude::StyleExt::style(s, self.style_str())
             }
         }
 

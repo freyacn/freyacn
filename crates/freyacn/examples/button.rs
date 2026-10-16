@@ -1,12 +1,12 @@
 use freyacn::components::Button;
-use freyacn::*;
+use freyacn::prelude::*;
 
 fn main() {
     launch(LaunchConfig::new().with_window(WindowConfig::new(app)));
 }
 
 fn app() -> impl IntoElement {
-    let theme = Theme::neutral(false, "neutral");
+    let theme = Theme::light().neutral();
     use_init_cn_theme(theme);
 
     ScrollView::new()
@@ -40,7 +40,7 @@ fn app() -> impl IntoElement {
                                 .color(theme.foreground)
                                 .text("Default Size"),
                         )
-                        .child(Button().variant("default").size("xs")),
+                        .child(Button().child("Button").variant("destructive")),
                 ),
         )
 }

@@ -56,7 +56,6 @@ enum Commands {
     },
 }
 
-
 fn main() {
     let cli = Cli::parse();
 
@@ -66,14 +65,15 @@ fn main() {
             force,
             no_git,
         } => {
-            initialize_project(name.as_deref(), force, no_git).expect("Failed to initialize project");
+            initialize_project(name.as_deref(), force, no_git)
+                .expect("Failed to initialize project");
         }
     }
 }
 
 fn initialize_project(
     name: Option<&str>,
-    force: bool,
+    _force: bool,
     no_git: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // create directory if name exists, or create default directories
