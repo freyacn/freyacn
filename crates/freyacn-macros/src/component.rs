@@ -483,24 +483,24 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
             let ty = &p.ty;
             let ty_str = quote!(#ty).to_string().replace(' ', "");
 
-            let (accepts, doc) = match &p.kind {
+            let (accepts, doc, assign) = match &p.kind {
                 PropKind::Required => (
                     quote! { impl ::core::convert::Into<#ty> },
                     format!(
                         "Set the [`{name}`](Self::{name}) prop.\n\n\
-                         Required prop — accepts any type convertible into \
+                         **Required.** Accepts any type convertible into \
                          `{ty_str}`. Passing `None` or `Some(…)` is a type \
                          error, which is intentional."
                     ),
+                    quote! { ::core::option::Option::Some(::core::convert::Into::into(value)) },
                 ),
                 PropKind::Optional => (
                     quote! { impl ::core::convert::Into<::core::option::Option<#ty>> },
                     format!(
                         "Set the [`{name}`](Self::{name}) prop.\n\n\
-                         Optional prop. Accepts a bare `{ty_str}` (auto-wrapped \
-                         into `Some` via std's `From<T> for Option<T>`) or an \
-                         `Option<{ty_str}>` directly."
+                         Optional prop. Accepts an `Option<{ty_str}>` directly."
                     ),
+                    quote! { ::core::convert::Into::into(value) },
                 ),
                 PropKind::WithDefault(_) => {
                     let kind_label = if p.source == PropSource::Variant {
@@ -515,6 +515,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                              {kind_label} — accepts any type convertible into \
                              `{ty_str}`."
                         ),
+                        quote! { ::core::convert::Into::into(value) },
                     )
                 }
             };
@@ -526,7 +527,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
                     mut self,
                     value: #accepts,
                 ) -> Self {
-                    self.#name = ::core::convert::Into::into(value);
+                    self.#name = #assign;
                     self
                 }
             }

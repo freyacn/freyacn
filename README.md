@@ -76,7 +76,7 @@ separate crate because proc‑macro code must compile in a distinct target, but 
 
 ```toml
 [dependencies]
-freyacn = "0.2.0-alpha-1"
+freyacn = "0.2.0-alpha.1"
 freya = "0.4"
 ```
 
@@ -84,17 +84,15 @@ freya = "0.4"
 
 In `main.rs`:
 
-```rust
-use freyacn::{component, variant, StyleExt};
-use freyacn::theme::{Theme, use_init_cn_theme};
-use freya::prelude::*;
+```rust,no_run
+use freyacn::prelude::*;
 
 fn app() -> impl IntoElement {
-    let theme = Theme::neutral(false, "slate"); // light mode, slate base
+    let theme = Theme::light().slate();
     use_init_cn_theme(theme);
 
     Button()
-        .label("Click me")
+        .child("Click me")
         .bg_primary()
         .text_primary_foreground()
         .p_4()
@@ -102,7 +100,7 @@ fn app() -> impl IntoElement {
 }
 
 fn main() {
-    launch(app);
+    launch(LaunchConfig::new().with_window(WindowConfig::new(app)));
 }
 ```
 
@@ -110,9 +108,8 @@ fn main() {
 
 ## Quick start
 
-```rust
-use freyacn::{component, variant, StyleExt};
-use freya::prelude::*;
+```rust,no_run
+use freyacn::prelude::*;
 
 /// Visual variants for a button.
 #[variant]
@@ -132,36 +129,45 @@ pub enum ButtonVariant {
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonSize {
-    #[variant("text-xs px-2 py-1")]    Sm,
+    #[variant("text-xs px-2 py-1")]
+    Sm,
     #[variant("text-sm px-4 py-2")]
-    #[default] Md,
-    #[variant("text-base px-6 py-3")] Lg,
+    #[default]
+    Md,
+    #[variant("text-base px-6 py-3")]
+    Lg,
 }
 
 #[component(
-    props( tooltip: String),
+    props(tooltip: String),
     ext(children, style),
     variants(
         variant: ButtonVariant = ButtonVariant::Default,
         size:    ButtonSize    = ButtonSize::Md,
     ),
 )]
-fn Button(label: String) {
+#[derive(Clone, PartialEq)]
+fn CustomButton(label: String) {
     rect()
         .background(style.background.clone().unwrap_or_default())
         .padding(style.padding.unwrap_or_default())
         .corner_radius(style.corner_radius.unwrap_or_default())
-        .child(label().text(label.as_str()))
+        .child(label().text(label.clone()))
         .children(children.clone())
 }
 ```
 
 Three equivalent ways to construct it:
 
-```rust
-Button().label("Save").variant(ButtonVariant::Destructive);   // typed
-Button().label("Save").variant("destructive");                // &str
-Button!(label = "Save", variant = "destructive");             // macro
+```rust,no_run
+# use freyacn::prelude::*;
+# #[variant] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub enum ButtonVariant { #[default] #[variant("")] Default, #[variant("")] Destructive }
+# #[variant] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub enum ButtonSize { #[default] #[variant("")] Md }
+# #[component(ext(style), variants(variant: ButtonVariant = ButtonVariant::Default, size: ButtonSize = ButtonSize::Md))]
+# #[derive(Clone, PartialEq)] fn CustomButton(label: String) { rect() }
+CustomButton().label("Save").variant(ButtonVariant::Destructive);   // typed
+CustomButton().label("Save").variant("destructive");                // &str
+CustomButton!(label = "Save", variant = "destructive");             // macro
 ```
 
 ---
@@ -556,38 +562,60 @@ Tailwind scale (1 unit = 4 px), including fractional steps (`p_0_5`, `p_1_5`, `p
 
 For developers who prefer Tailwind's own syntax, every `StyleExt` implementor accepts a style string:
 
-```rust
-Style::default ().style("p-4 bg-primary text-white shadow-md font-bold")
+```rust,no_run
+# use freyacn::prelude::*;
+let _ = Style::default().style("p-4 bg-primary text-white shadow-md font-bold");
 ```
 
-The parser understands the full Tailwind vocabulary that Freya can render — palette and semantic colours, spacing,
-sizing, typography, borders, effects, flex, positioning, overflow, aspect ratio, order, space, divide, outline, list,
-accent/caret, and more. Unknown tokens are silently ignored (matching Tailwind's behaviour).
+The parser understands the full Tailwind vocabulary that Freya can render — palette and semantic colours, opacity modifiers (`/80`), spacing, sizing (including `w-screen`), typography, borders, rings (`ring`, `ring-offset-*`, `inset-ring-*`), arbitrary bracket values (`text-[12.8px]`, `bg-[#ff0000]`), transforms (`rotate-*`, `scale-*`, `blur-*`), effects, flex, positioning, overflow, aspect ratio, order, space, divide, outline, list, accent/caret, and state-conditional modifiers (`hover:`, `focus:`, `focus-visible:`, `active:`, `disabled:`, `dark:`). Unknown tokens are silently ignored (matching Tailwind's behaviour).
 
 ### `style_debug`
 
 When you want to know which tokens had no effect — for typo hunting or test assertions — use `style_debug`:
 
-```rust
-let (style, unknown) = Style::default ()
-.style_debug("p-4 bg-primary shdaow-md not-a-thing");
+```rust,no_run
+# use freyacn::prelude::*;
+let (style, unknown) = Style::default()
+    .style_debug("p-4 bg-primary shdaow-md not-a-thing");
 
 assert_eq!(unknown, vec!["shdaow-md", "not-a-thing"]);
 ```
 
-### What's not representable
+### State-aware styling & transforms
 
-Freya 0.4.3 has no primitive for the following Tailwind families, so no style tokens exist for them: grid layout,
-transforms, filters, backdrop, transitions/animations, scroll snap, floating, responsive prefixes (`sm:`, `md:`), state
-prefixes (`hover:`, `focus:`, `group-*`), and dark mode prefixes. Handle those with Rust — `use_viewport()`,
-`Interactive`, `Focusable`, and `use_cn_theme()` give you direct access to the same information.
+State variants (`hover:`, `focus:`, `focus-visible:`, `active:`, `disabled:`, `dark:`) and transforms (`rotate-45`, `scale-95`, `blur-sm`) are parsed into conditional style layers. The [`Div`] component observes runtime pointer, focus, disabled, and dark-mode states and folds the active styles automatically.
+
+### What is not representable in Freya 0.4.3
+
+CSS Grid layout, CSS keyframe transitions/animations, backdrop blur/filters, and responsive viewport-width prefixes (`sm:`, `md:`, `lg:`). For viewport responsiveness and animations, Freya hooks (`use_viewport()`, `use_animation()`, etc.) can be used directly in Rust code.
+
+---
+
+### `cn!` macro
+
+Utility macro for Tailwind-style class concatenation, skipping empty values and `None` options:
+
+```rust
+# use freyacn::prelude::*;
+let is_active = true;
+let classes = cn!(
+    "px-4 py-2 rounded",
+    "bg-primary text-primary-foreground",
+    if is_active { "ring-2 ring-ring" } else { "" },
+    Some("shadow-md"),
+    None::<&str>,
+);
+assert_eq!(
+    classes,
+    "px-4 py-2 rounded bg-primary text-primary-foreground ring-2 ring-ring shadow-md",
+);
+```
 
 ---
 
 ## `#[extensions(...)]`
 
-Extensions opt a struct into freyacn's built‑in bundles. Each name maps to a field, an initialiser, a render‑body local,
-and a trait impl.
+Extensions opt a struct into freyacn's built‑in bundles. Each name maps to a field, an initialiser, a render‑body local, and a trait impl.
 
 ### Supported names
 
@@ -597,20 +625,14 @@ and a trait impl.
 | `key`            | `freyacn::KeyExt`           | `key: DiffKey`                                           | `write_key`          |
 | `style`          | `freyacn::StyleExt`         | `style: Style`                                           | `get_style`          |
 | `event_handlers` | `freyacn::EventHandlersExt` | `event_handlers: FxHashMap<EventName, EventHandlerType>` | `get_event_handlers` |
-| `corner_radius`  | `freyacn::CornerRadiusExt`  | *(delegates to `style`)*                                 | `with_corner_radius` |
-
-### Dependencies
-
-`corner_radius` requires `style`. `variants(...)` inside `#[component]` also requires `style`. Missing dependencies
-produce a targeted compile error at the attribute site.
+| `accessibility`  | `freyacn::AccessibilityExt` | `accessibility: AccessibilityOptions`                    | `get_accessibility`  |
 
 ### Standalone usage
 
-The attribute works on hand‑written structs too. The struct must derive or implement `Default` so the added fields can
-be initialised.
+The attribute works on hand‑written structs too. The struct must derive or implement `Default` so the added fields can be initialised.
 
-```rust
-use freyacn::extensions;
+```rust,no_run
+use freyacn::prelude::*;
 
 #[extensions(children, key, style)]
 #[derive(Clone, PartialEq, Default)]
@@ -621,80 +643,77 @@ pub struct PlainBox;
 
 ## Components
 
-Components live in `freyacn/components`. Each is a shadc-inspired component. The runtime crate ships a small core set
-(`Button`, `Label`, `Icon`), but the registry is where the growing library
-lives.
+`freyacn` ships core primitives built with the macro engine and Tailwind v4 styling:
 
-### Button
+### `Button`
 
-The primary interactive component — 6 variants and 8 sizes.
+The primary interactive component — 6 variants and 8 sizes. Composited cleanly on `Div`.
 
-**Variants**: `default`, `destructive`, `outline`, `secondary`, `ghost`, `link`
+- **6 Variants**: `Default`, `Outline`, `Secondary`, `Ghost`, `Destructive`, `Link` (supports string coercion like `.variant("outline")`)
+- **8 Sizes**: `Default` (h-8), `Xs` (h-6), `Sm` (h-7), `Lg` (h-9), `Icon` (size-8), `IconXs`, `IconSm`, `IconLg`
+- **Props**: `disabled: bool`, `focusable: bool`, `on_hover: EventHandler<Event<PointerEventData>>`
+- **Extensions**: `style`, `children`, `key`, `event_handlers`
 
-**Sizes**: `default` (h‑8), `xs` (h‑6), `sm` (h‑7), `lg` (h‑9), `icon` (size‑8), `icon-xs`, `icon-sm`, `icon-lg`
-
-```rust
+```rust,no_run
+# use freyacn::prelude::*;
 Button()
-.label("Delete")
-.variant(ButtonVariant::Destructive)
-.size(ButtonSize::Lg)
-.corner_radius(8.0)
-.on_press( | | delete())
+    .child("Delete")
+    .variant(ButtonVariant::Destructive)
+    .size(ButtonSize::Lg)
+    .on_press(|_| println!("Deleted!"));
 ```
 
-### Label
+### `Div`
 
-Text with full typography support.
+A foundational, state-aware layout primitive wrapping Freya's `rect()`. It forwards every `Style` property to Freya's renderer and observes runtime states:
 
-```rust
-Label("Hello World")
-.text_2xl()
-.font_bold()
-.text_primary()
-.p_2()
-```
+- **State observation**: Automatically updates `active` flags (`DARK`, `HOVER`, `ACTIVE`, `FOCUS`, `FOCUS_VISIBLE`, `DISABLED`) and applies conditional style layers.
+- **Transforms & effects**: `rotate`, `scale`, `transform_origin`, `blur`, `layer` (z-index), child offsets (`offset_x`, `offset_y`).
+- **Typography & text overflow**: Font width, text height, visible size, text shadows, text ellipsis (`clip` / `ellipsis`).
+- **Accessibility & events**: Integrated accessibility roles and pointers.
 
-### Icon
-
-An SVG icon that inherits foreground colour from its parent.
-
-```rust
-Icon(heart())
-.size(24.0)
-.text_red_500()
+```rust,no_run
+# use freyacn::prelude::*;
+Div()
+    .child("Card content")
+    .p_4()
+    .bg_card()
+    .text_card_foreground()
 ```
 
 ---
 
 ## Theming
 
-The `Theme` struct holds every semantic colour (`background`, `foreground`, `primary`, …) plus a `Colors` palette
-containing all Tailwind colours.
+The `Theme` struct holds every semantic colour (`background`, `foreground`, `primary`, …) plus a `Colors` palette containing all Tailwind colours.
 
 ### Initialising a theme
 
-```rust
-let theme = Theme::neutral(false, "slate"); // light mode, slate base
+```rust,no_run
+# use freyacn::prelude::*;
+// Fluent light or dark theme with default palette:
+let theme = Theme::light().slate();
 use_init_cn_theme(theme);
-```
 
-### shadcn‑style configuration
+// Or chainable fluent configuration:
+let theme = Theme::dark().stone().theme_color("rose");
+use_init_cn_theme(theme);
 
-```rust
-let theme = Theme::base_color("stone", true).theme_color("rose");
+// Or with runtime palette names:
+let theme = Theme::from_base("zinc", true).theme_color("blue");
 use_init_cn_theme(theme);
 ```
 
 ### Reading the theme inside a component
 
-```rust
-let theme = use_cn_theme().read();
-let bg = theme.background;
-let primary = theme.primary;
+```rust,no_run
+# use freyacn::prelude::*;
+let theme = use_cn_theme();
+let bg = theme.read().background;
+let primary = theme.read().primary;
 ```
 
-All palette and semantic helpers read the theme at call time, so switching themes updates every component on the next
-render without reconstruction.
+All palette and semantic helpers read the theme at call time, so switching themes updates every component on the next render without reconstruction.
 
 ---
 

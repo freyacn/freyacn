@@ -116,12 +116,6 @@ fn extension_for(
                         &mut self.key
                     }
                 }
-
-                impl #struct_name {
-                    fn render_key(&self) -> DiffKey {
-                        self.key.clone().or(self.default_key())
-                    }
-                }
             }],
         },
 

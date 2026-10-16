@@ -24,8 +24,7 @@
 //! In your application’s root component, call `use_init_cn_theme` with the theme you want.
 //!
 //! ```no_run
-//! # use freyacn::theme::*;
-//! # use freya::prelude::*;
+//! # use freyacn::prelude::*;
 //! fn App() -> impl IntoElement {
 //!     // Create a light theme with a slate base and blue accent.
 //!     let theme = Theme::light().base_color("slate").theme_color("blue");
@@ -43,13 +42,12 @@
 //! Inside any component, call `use_cn_theme()` to retrieve the current theme.
 //!
 //! ```no_run
-//! # use freyacn::theme::*;
-//! # use freya::prelude::*;
+//! # use freyacn::prelude::*;
 //! fn MyButton() -> impl IntoElement {
 //!     let theme = use_cn_theme();
-//!     Button::new()
-//!         .background(theme.primary)
-//!         .color(theme.primary_foreground)
+//!     rect()
+//!         .background(theme.read().primary)
+//!         .color(theme.read().primary_foreground)
 //!         .child("Click me")
 //! }
 //! ```
@@ -58,8 +56,7 @@
 //! Use `use_provide_cn_theme` to supply a different theme to a specific branch of your UI.
 //!
 //! ```no_run
-//! # use freyacn::theme::*;
-//! # use freya::prelude::*;
+//! # use freyacn::prelude::*;
 //! fn DarkPanel() -> impl IntoElement {
 //!     let dark_theme = Theme::dark().base_color("zinc").theme_color("rose");
 //!     use_provide_cn_theme(dark_theme);
@@ -67,6 +64,7 @@
 //!     rect()
 //!         .expanded()
 //!         .background(dark_theme.background)
+//!         .child("Dark panel")
 //! }
 //! ```
 
@@ -951,8 +949,10 @@ impl Theme {
     /// `.theme_color(...)` to pick the accent. Order matters:
     /// `.base_color` resets the accent, so call it first.
     ///
-    /// ```ignore
-    /// Theme::light().base_color("zinc").theme_color("blue")
+    /// ```
+    /// # use freyacn::theme::Theme;
+    /// let theme = Theme::light().base_color("zinc").theme_color("blue");
+    /// assert_eq!(theme.is_dark, false);
     /// ```
     pub fn light() -> Self {
         Self::from_base("slate", false)
@@ -964,8 +964,10 @@ impl Theme {
     /// `.theme_color(...)` to pick the accent. Order matters:
     /// `.base_color` resets the accent, so call it first.
     ///
-    /// ```ignore
-    /// Theme::dark().base_color("zinc").theme_color("rose")
+    /// ```
+    /// # use freyacn::theme::Theme;
+    /// let theme = Theme::dark().base_color("zinc").theme_color("rose");
+    /// assert_eq!(theme.is_dark, true);
     /// ```
     pub fn dark() -> Self {
         Self::from_base("slate", true)
@@ -977,10 +979,12 @@ impl Theme {
     /// shades. Call `.theme_color(...)` **after** this to reapply an
     /// accent.
     ///
-    /// ```ignore
-    /// Theme::dark()
+    /// ```
+    /// # use freyacn::theme::Theme;
+    /// let theme = Theme::dark()
     ///     .base_color("stone")   // rebuild the neutral surfaces
-    ///     .theme_color("rose")   // then pick the accent
+    ///     .theme_color("rose");  // then pick the accent
+    /// assert_eq!(theme.is_dark, true);
     /// ```
     ///
     /// # Panics
@@ -1452,8 +1456,10 @@ impl Theme {
     /// Shorthand for `self.base_color("stone")`. Chain
     /// `.theme_color(...)` afterwards to pick the accent.
     ///
-    /// ```ignore
-    /// Theme::dark().stone().theme_color("amber")
+    /// ```
+    /// # use freyacn::theme::Theme;
+    /// let theme = Theme::dark().stone().theme_color("amber");
+    /// assert_eq!(theme.is_dark, true);
     /// ```
     pub fn stone(self) -> Self {
         self.base_color("stone")
@@ -1547,15 +1553,14 @@ impl Theme {
 /// This is the recommended way to set the root theme for your application.
 ///
 /// # Example
-/// ```
-/// # use freyacn::theme::{use_init_cn_theme, Theme};
-/// # use freya::prelude::*;
+/// ```no_run
+/// # use freyacn::prelude::*;
 /// fn App() -> impl IntoElement {
 ///     let theme = Theme::light().base_color("slate").theme_color("blue");
 ///     use_init_cn_theme(theme);
 ///
 ///     // Your app components...
-///     rect().expanded().child(MyComponent())
+///     rect().expanded().child("Hello, world!")
 /// }
 /// ```
 pub fn use_init_cn_theme(theme: Theme) -> State<Theme> {
@@ -1578,13 +1583,13 @@ pub fn use_init_cn_theme(theme: Theme) -> State<Theme> {
 /// of any parent theme.
 ///
 /// # Example
-/// ```
-/// # use freyacn::theme::{use_provide_cn_theme, Theme};
-/// # use freya::prelude::*;
+/// ```no_run
+/// # use freyacn::prelude::*;
 /// fn DarkSubtree() -> impl IntoElement {
 ///     let dark_theme = Theme::dark().base_color("zinc").theme_color("rose");
 ///     use_provide_cn_theme(dark_theme);
 ///     // Children here will see the dark theme.
+///     rect().child("Dark subtree")
 /// }
 /// ```
 pub fn use_provide_cn_theme(theme: Theme) -> State<Theme> {
@@ -1601,13 +1606,12 @@ pub fn use_provide_cn_theme(theme: Theme) -> State<Theme> {
 /// For a fallback that doesn't panic, use `get_cn_theme_or_default()` instead.
 ///
 /// # Example
-/// ```
-/// # use freyacn::theme::use_cn_theme;
-/// # use freya::prelude::*;
+/// ```no_run
+/// # use freyacn::prelude::*;
 /// fn MyButton() -> impl IntoElement {
 ///     let theme = use_cn_theme();
-///     let background = theme.background;
-///     // ...
+///     let background = theme.read().background;
+///     rect().background(background)
 /// }
 /// ```
 pub fn use_cn_theme() -> State<Theme> {
@@ -1620,12 +1624,11 @@ pub fn use_cn_theme() -> State<Theme> {
 /// This is useful for built‑in components that should work even without an explicit theme provider.
 ///
 /// # Example
-/// ```
-/// # use freyacn::theme::get_cn_theme_or_default;
-/// # use freya::prelude::*;
+/// ```no_run
+/// # use freyacn::prelude::*;
 /// fn MyComponent() -> impl IntoElement {
 ///     let theme = get_cn_theme_or_default();
-///     // theme will always be valid
+///     rect().background(theme.read().background)
 /// }
 /// ```
 pub fn get_cn_theme_or_default() -> Readable<Theme> {
