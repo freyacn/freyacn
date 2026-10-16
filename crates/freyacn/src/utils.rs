@@ -1,4 +1,4 @@
-use freya_core::prelude::Color;
+use freya::prelude::{Color, Fill};
 
 // ---- Color helpers ----
 pub fn color_with_alpha(color: Color, alpha: f32) -> Color {
@@ -25,3 +25,15 @@ pub fn blend_colors(base: Color, blend: Color, ratio: f32) -> Color {
     Color::from_argb((a * 255.0) as u8, r as u8, g as u8, b as u8)
 }
 
+pub fn get_color_from_fill(fill: Fill) -> Color {
+    match fill {
+        Fill::Color(color) => color,
+        // If it's a gradient or shader, fall back to a default color
+        _ => Color::TRANSPARENT,
+    }
+}
+
+pub fn apply_opacity(c: Color, factor: f32) -> Color {
+    let a = (c.a() as f32 * factor) as u8;
+    Color::from_argb(a, c.r(), c.g(), c.b())
+}

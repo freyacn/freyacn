@@ -12,9 +12,8 @@ categories = ["gui", "development-tools"]
 hotreload = ["freya/hotreload"]
 
 [dependencies]
-freya = { version = "0.4.1", features = ["icons"] }
-freya-core = "0.4.1"
-freya-icons = { version = "0.4.1", features = ["lucide"] }
+freya = { version = "0.4.3", features = ["icons"] }
+freya-core = "0.4.3"
 freyacn_macros.workspace = true
 paste = "1.0.15"
 rustc-hash = "2.1.3"

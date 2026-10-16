@@ -1866,7 +1866,6 @@ version = "0.2.0-alpha.1"
 dependencies = [
  "freya",
  "freya-core",
- "freya-icons",
  "freyacn_macros",
  "paste",
  "rustc-hash",

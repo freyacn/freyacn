@@ -621,8 +621,8 @@ pub struct PlainBox;
 
 ## Components
 
-Components live in `freyacn-registry`. Each is a self‑contained module you can copy into your project or pull via the
-CLI. The runtime crate ships a small core set (`Button`, `Label`, `Icon`), but the registry is where the growing library
+Components live in `freyacn/components`. Each is a shadc-inspired component. The runtime crate ships a small core set
+(`Button`, `Label`, `Icon`), but the registry is where the growing library
 lives.
 
 ### Button

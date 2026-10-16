@@ -10,7 +10,7 @@ use freya::prelude::{
     Gaps, Overflow, Position, Shadow, Size, TextAlign, TextDecoration,
 };
 
-use freya_core::prelude::Color;
+use freya::prelude::Color;
 use paste::paste;
 use torin::values::position::PositionSides;
 
@@ -37,18 +37,13 @@ pub enum BorderStyle {
     None,
 }
 
-/// Visibility of an element.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Visibility {
-    /// Render normally.
     Visible,
-    /// Hidden, but still occupies layout space.
     Hidden,
-    /// Hidden and does not occupy space (like `display: none`).
     Collapse,
 }
 
-/// User-select behaviour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UserSelect {
     None,
@@ -57,7 +52,6 @@ pub enum UserSelect {
     Auto,
 }
 
-/// Resize behaviour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Resize {
     None,
@@ -66,7 +60,6 @@ pub enum Resize {
     Vertical,
 }
 
-/// Whitespace handling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Whitespace {
     Normal,
@@ -77,7 +70,6 @@ pub enum Whitespace {
     BreakSpaces,
 }
 
-/// Word-break behaviour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WordBreak {
     Normal,
@@ -86,14 +78,12 @@ pub enum WordBreak {
     Keep,
 }
 
-/// Text-overflow behaviour (used with `whitespace-nowrap` and a fixed width).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextEllipsis {
     Clip,
     Ellipsis,
 }
 
-/// List bullet style.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ListStyleType {
     None,
@@ -101,14 +91,12 @@ pub enum ListStyleType {
     Decimal,
 }
 
-/// List marker position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ListStylePosition {
     Inside,
     Outside,
 }
 
-/// Background repeat behaviour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackgroundRepeat {
     Repeat,
@@ -117,7 +105,6 @@ pub enum BackgroundRepeat {
     RepeatY,
 }
 
-/// Background size.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackgroundSize {
     Auto,
@@ -125,7 +112,6 @@ pub enum BackgroundSize {
     Contain,
 }
 
-/// Background attachment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackgroundAttachment {
     Fixed,
@@ -133,7 +119,6 @@ pub enum BackgroundAttachment {
     Scroll,
 }
 
-/// Background clip region.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackgroundClip {
     Border,
@@ -142,14 +127,12 @@ pub enum BackgroundClip {
     Text,
 }
 
-/// Border collapse behaviour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BorderCollapse {
     Collapse,
     Separate,
 }
 
-/// Table-layout mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TableLayout {
     Auto,
@@ -248,13 +231,98 @@ macro_rules! ext_spacing_scale {
     };
 }
 
+/// Interactive and environmental states a style can be conditioned on.
+///
+/// Combined with `|` when multiple prefixes are chained
+/// (`dark:hover:bg-slate-800` → `StateFlags::DARK | StateFlags::HOVER`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub struct StateFlags(u16);
+
+impl StateFlags {
+    pub const NONE: StateFlags = StateFlags(0);
+    pub const DARK: StateFlags = StateFlags(1 << 0);
+    pub const HOVER: StateFlags = StateFlags(1 << 1);
+    pub const FOCUS: StateFlags = StateFlags(1 << 2);
+    pub const FOCUS_VISIBLE: StateFlags = StateFlags(1 << 3);
+    pub const FOCUS_WITHIN: StateFlags = StateFlags(1 << 4);
+    pub const ACTIVE: StateFlags = StateFlags(1 << 5);
+    pub const DISABLED: StateFlags = StateFlags(1 << 6);
+    pub const VISITED: StateFlags = StateFlags(1 << 7);
+    pub const CHECKED: StateFlags = StateFlags(1 << 8);
+    pub const TARGET: StateFlags = StateFlags(1 << 9);
+
+    /// Combine two flag sets.
+    pub const fn or(self, other: StateFlags) -> StateFlags {
+        StateFlags(self.0 | other.0)
+    }
+
+    /// `true` when every bit set in `self` is also set in `other`.
+    ///
+    /// Used at render time to decide whether a state-conditional style
+    /// should be applied.
+    pub const fn is_subset_of(self, other: StateFlags) -> bool {
+        self.0 & other.0 == self.0
+    }
+
+    /// `true` when at least one bit is set.
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+/// One entry in [`Style::states`]: a set of flags plus the `Style` to
+/// apply when that set is fully active.
+pub type StateStyle = (StateFlags, Box<Style>);
+
+/// Map a prefix name to its flag. Returns `None` for anything that isn't
+/// a recognised state.
+fn state_flag_for(name: &str) -> Option<StateFlags> {
+    Some(match name {
+        "dark" => StateFlags::DARK,
+        "hover" => StateFlags::HOVER,
+        "focus" => StateFlags::FOCUS,
+        "focus-visible" => StateFlags::FOCUS_VISIBLE,
+        "focus-within" => StateFlags::FOCUS_WITHIN,
+        "active" => StateFlags::ACTIVE,
+        "disabled" => StateFlags::DISABLED,
+        "visited" => StateFlags::VISITED,
+        "checked" => StateFlags::CHECKED,
+        "target" => StateFlags::TARGET,
+        _ => return None,
+    })
+}
+
+/// Peel any leading `state:` prefixes off a token.
+///
+/// ```text
+/// split_state_prefix("hover:bg-primary")
+///     -> (StateFlags::HOVER, "bg-primary")
+///
+/// split_state_prefix("dark:hover:bg-slate-800")
+///     -> (StateFlags::DARK | StateFlags::HOVER, "bg-slate-800")
+///
+/// split_state_prefix("bg-primary")
+///     -> (StateFlags::NONE, "bg-primary")
+/// ```
+fn split_state_prefix(token: &str) -> (StateFlags, &str) {
+    let mut flags = StateFlags::NONE;
+    let mut rest = token;
+    while let Some((prefix, tail)) = rest.split_once(':') {
+        let Some(flag) = state_flag_for(prefix) else {
+            break;
+        };
+        flags = flags.or(flag);
+        rest = tail;
+    }
+    (flags, rest)
+}
+
 // ==============================================================
 // Style: the data container
 // ==============================================================
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Style {
-    // ---- Box styling ----
     pub background: Option<Fill>,
     pub corner_radius: Option<CornerRadius>,
     pub border_width: Option<f32>,
@@ -273,18 +341,15 @@ pub struct Style {
     pub divide_color: Option<Color>,
     pub border_collapse: Option<BorderCollapse>,
 
-    // ---- Background ----
     pub bg_repeat: Option<BackgroundRepeat>,
     pub bg_size: Option<BackgroundSize>,
     pub bg_attachment: Option<BackgroundAttachment>,
     pub bg_clip: Option<BackgroundClip>,
 
-    // ---- Ring ----
     pub ring_width: Option<f32>,
     pub ring_color: Option<Color>,
     pub ring_offset: Option<f32>,
 
-    // ---- Text ----
     pub text_color: Option<Color>,
     pub font_size: Option<FontSize>,
     pub font_slant: Option<FontSlant>,
@@ -310,11 +375,9 @@ pub struct Style {
     pub caret_color: Option<Color>,
     pub placeholder_color: Option<Color>,
 
-    // ---- Spacing ----
     pub padding: Option<Gaps>,
     pub margin: Option<Gaps>,
 
-    // ---- Sizing ----
     pub width: Option<Size>,
     pub height: Option<Size>,
     pub min_width: Option<Size>,
@@ -326,7 +389,6 @@ pub struct Style {
     pub columns: Option<u32>,
     pub container: Option<bool>,
 
-    // ---- Positioning ----
     pub position: Option<Position>,
     pub top: Option<f32>,
     pub right: Option<f32>,
@@ -335,12 +397,10 @@ pub struct Style {
     pub z_index: Option<i32>,
     pub order: Option<i32>,
 
-    // ---- Overflow ----
     pub overflow: Option<Overflow>,
     pub overflow_x: Option<Overflow>,
     pub overflow_y: Option<Overflow>,
 
-    // ---- Flex ----
     pub direction: Option<Direction>,
     pub main_align: Option<Alignment>,
     pub cross_align: Option<Alignment>,
@@ -353,13 +413,20 @@ pub struct Style {
     pub space_x: Option<f32>,
     pub space_y: Option<f32>,
 
-    // ---- Effects ----
     pub opacity: Option<f32>,
     pub visibility: Option<Visibility>,
     pub user_select: Option<UserSelect>,
     pub resize: Option<Resize>,
     pub pointer_events: Option<bool>,
     pub sr_only: Option<bool>,
+
+    /// State-conditional styles.
+    ///
+    /// Populated by the class-string parser when it encounters prefixed
+    /// tokens like `dark:bg-slate-900` or `hover:bg-primary/80`. Folded
+    /// into the base style at render time via
+    /// [`Style::with_active_states`].
+    pub states: Vec<StateStyle>,
 }
 
 impl Default for Style {
@@ -452,6 +519,7 @@ impl Default for Style {
             resize: None,
             pointer_events: None,
             sr_only: None,
+            states: Vec::new(),
         }
     }
 }
@@ -593,6 +661,12 @@ impl Style {
             resize: other.resize.or(self.resize),
             pointer_events: other.pointer_events.or(self.pointer_events),
             sr_only: other.sr_only.or(self.sr_only),
+
+            states: {
+                let mut v = self.states;
+                v.extend(other.states);
+                v
+            },
         }
     }
 
@@ -612,6 +686,37 @@ impl Style {
 
     pub fn is_empty(&self) -> bool {
         *self == Style::default()
+    }
+
+    /// Fold every state-conditional style whose flags are fully
+    /// contained in `active` into the base style, returning the merged
+    /// result.
+    ///
+    /// Entries are applied in declaration order, so later declarations
+    /// win — consistent with the rest of the merge model.
+    ///
+    /// ```ignore
+    /// let theme = use_cn_theme().read();
+    /// let mut active = StateFlags::NONE;
+    /// if theme.is_dark       { active = active.or(StateFlags::DARK); }
+    /// if *hovering.read()    { active = active.or(StateFlags::HOVER); }
+    /// if focus.is_focused()  { active = active.or(StateFlags::FOCUS_VISIBLE); }
+    ///
+    /// let effective = style.with_active_states(active);
+    /// ```
+    pub fn with_active_states(mut self, active: StateFlags) -> Style {
+        // Take the vector so we can move entries into `self` while
+        // iterating without a borrow conflict.
+        let states = std::mem::take(&mut self.states);
+        for (flags, state_style) in states {
+            if flags.is_subset_of(active) {
+                // `state_style` is a delta: merge the base into it so
+                // the delta's set fields win, then re-take its own
+                // (empty) states vec to keep the chain flat.
+                self = self.merge(*state_style);
+            }
+        }
+        self
     }
 
     pub fn style_debug(mut self, styles: impl AsRef<str>) -> (Self, Vec<String>) {
@@ -2677,6 +2782,44 @@ impl Style {
         (80, 80.0),
         (96, 96.0)
     );
+    style_spacing_scale!(
+        size,
+        size,
+        (0, 0.0),
+        (0_5, 0.5),
+        (1, 1.0),
+        (1_5, 1.5),
+        (2, 2.0),
+        (2_5, 2.5),
+        (3, 3.0),
+        (3_5, 3.5),
+        (4, 4.0),
+        (5, 5.0),
+        (6, 6.0),
+        (7, 7.0),
+        (8, 8.0),
+        (9, 9.0),
+        (10, 10.0),
+        (11, 11.0),
+        (12, 12.0),
+        (14, 14.0),
+        (16, 16.0),
+        (20, 20.0),
+        (24, 24.0),
+        (28, 28.0),
+        (32, 32.0),
+        (36, 36.0),
+        (40, 40.0),
+        (44, 44.0),
+        (48, 48.0),
+        (52, 52.0),
+        (56, 56.0),
+        (60, 60.0),
+        (64, 64.0),
+        (72, 72.0),
+        (80, 80.0),
+        (96, 96.0)
+    );
 
     // ---- style-string API ----
     pub fn style(mut self, styles: impl AsRef<str>) -> Self {
@@ -2700,7 +2843,6 @@ pub trait StyleExt: Sized {
         self
     }
 
-    // Base setters
     fn background(self, color: Color) -> Self {
         self.map_style(|s| s.background(color))
     }
@@ -3645,6 +3787,33 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.or(defaults))
     }
 
+    /// Attach a state-conditional style to this value.
+    ///
+    /// Used by the class-string parser when a token carries a prefix
+    /// like `dark:` or `hover:`. The style is stored, not applied, until
+    /// render time.
+    ///
+    /// ```ignore
+    /// // `dark:bg-slate-900` — attach `bg_slate_900` under the DARK flag.
+    /// style.state_style(
+    ///     StateFlags::DARK,
+    ///     Style::default().bg_slate_900(),
+    /// );
+    /// ```
+    fn state_style(self, flags: StateFlags, style: Style) -> Self {
+        self.map_style(|mut s| {
+            s.states.push((flags, Box::new(style)));
+            s
+        })
+    }
+
+    /// Fold all matching state styles into the base.
+    ///
+    /// Convenience wrapper over [`Style::with_active_states`].
+    fn with_active_states(self, active: StateFlags) -> Self {
+        self.map_style(|s| s.with_active_states(active))
+    }
+
     // Palette colours
     ext_palette_family!(text, slate);
     ext_palette_family!(text, gray);
@@ -4575,6 +4744,44 @@ pub trait StyleExt: Sized {
         (80, 80.0),
         (96, 96.0)
     );
+    ext_spacing_scale!(
+        size,
+        size,
+        (0, 0.0),
+        (0_5, 0.5),
+        (1, 1.0),
+        (1_5, 1.5),
+        (2, 2.0),
+        (2_5, 2.5),
+        (3, 3.0),
+        (3_5, 3.5),
+        (4, 4.0),
+        (5, 5.0),
+        (6, 6.0),
+        (7, 7.0),
+        (8, 8.0),
+        (9, 9.0),
+        (10, 10.0),
+        (11, 11.0),
+        (12, 12.0),
+        (14, 14.0),
+        (16, 16.0),
+        (20, 20.0),
+        (24, 24.0),
+        (28, 28.0),
+        (32, 32.0),
+        (36, 36.0),
+        (40, 40.0),
+        (44, 44.0),
+        (48, 48.0),
+        (52, 52.0),
+        (56, 56.0),
+        (60, 60.0),
+        (64, 64.0),
+        (72, 72.0),
+        (80, 80.0),
+        (96, 96.0)
+    );
 
     // style-string API
     fn style(self, styles: impl AsRef<str>) -> Self {
@@ -4887,6 +5094,104 @@ fn palette_colour(family: &str, shade: &str) -> Option<Color> {
     }
 }
 
+// ==============================================================
+// Opacity helpers
+// ==============================================================
+
+/// Split a trailing `/N` opacity modifier from a colour token.
+///
+/// Returns `(base, Some(alpha_0_to_1))` when a modifier is present,
+/// otherwise `(rest, None)`.
+///
+/// ```text
+/// split_opacity("destructive/50") -> ("destructive", Some(0.5))
+/// split_opacity("red-500/80")     -> ("red-500",     Some(0.8))
+/// split_opacity("primary")        -> ("primary",     None)
+/// ```
+///
+/// Also accepts the bracket form `/[0.37]` for an explicit `0..1` value.
+fn split_opacity(rest: &str) -> (&str, Option<f32>) {
+    if let Some((base, mod_str)) = rest.rsplit_once('/') {
+        // Bracket form: `/[0.37]`
+        if let Some(inner) = mod_str.strip_prefix('[').and_then(|x| x.strip_suffix(']')) {
+            if let Ok(v) = inner.parse::<f32>() {
+                return (base, Some(v.clamp(0.0, 1.0)));
+            }
+        }
+        // Percent form: `/50`
+        if let Ok(pct) = mod_str.parse::<f32>() {
+            return (base, Some((pct / 100.0).clamp(0.0, 1.0)));
+        }
+    }
+    (rest, None)
+}
+
+/// Multiply a colour's alpha channel by `factor` if one was supplied.
+///
+/// Returns the colour unchanged when `alpha` is `None`, so the caller can
+/// always pass `Some`/`None` through without branching.
+fn with_alpha(c: Color, alpha: Option<f32>) -> Color {
+    match alpha {
+        Some(a) => {
+            let new_a = (c.a() as f32 * a) as u8;
+            Color::from_argb(new_a, c.r(), c.g(), c.b())
+        }
+        None => c,
+    }
+}
+
+/// Look up a semantic token from the active theme.
+///
+/// Returns `None` when `token` isn't a known semantic name. Used by every
+/// colour dispatcher so opacity support is a two-line addition per
+/// dispatcher instead of a thirty-arm `match`.
+fn semantic_colour(token: &str) -> Option<Color> {
+    let t = use_cn_theme().read();
+    match token {
+        "background" => Some(t.background),
+        "foreground" => Some(t.foreground),
+        "primary" => Some(t.primary),
+        "primary-foreground" => Some(t.primary_foreground),
+        "secondary" => Some(t.secondary),
+        "secondary-foreground" => Some(t.secondary_foreground),
+        "muted" => Some(t.muted),
+        "muted-foreground" => Some(t.muted_foreground),
+        "accent" => Some(t.accent),
+        "accent-foreground" => Some(t.accent_foreground),
+        "destructive" => Some(t.destructive),
+        "destructive-foreground" => Some(t.destructive_foreground),
+        "card" => Some(t.card),
+        "card-foreground" => Some(t.card_foreground),
+        "popover" => Some(t.popover),
+        "popover-foreground" => Some(t.popover_foreground),
+        "border" => Some(t.border),
+        "input" => Some(t.input),
+        "ring" => Some(t.ring),
+        "sidebar" => Some(t.sidebar),
+        "sidebar-foreground" => Some(t.sidebar_foreground),
+        "sidebar-primary" => Some(t.sidebar_primary),
+        "sidebar-primary-foreground" => Some(t.sidebar_primary_foreground),
+        "sidebar-accent" => Some(t.sidebar_accent),
+        "sidebar-accent-foreground" => Some(t.sidebar_accent_foreground),
+        "sidebar-border" => Some(t.sidebar_border),
+        "sidebar-ring" => Some(t.sidebar_ring),
+        "disabled" => Some(t.disabled),
+        "disabled-foreground" => Some(t.disabled_foreground),
+        "chart-1" => Some(t.chart_1),
+        "chart-2" => Some(t.chart_2),
+        "chart-3" => Some(t.chart_3),
+        "chart-4" => Some(t.chart_4),
+        "chart-5" => Some(t.chart_5),
+        "white" => Some(t.colors.white),
+        "black" => Some(t.colors.black),
+        _ => None,
+    }
+}
+
+// ==============================================================
+// Known-token lookup (used by `style_debug`)
+// ==============================================================
+
 fn is_known_token(token: &str) -> bool {
     const KEYWORDS: &[&str] = &[
         "italic",
@@ -4983,6 +5288,7 @@ fn is_known_token(token: &str) -> bool {
     ];
 
     const PREFIXES: &[&str] = &[
+        "size-",
         "min-w-",
         "min-h-",
         "max-w-",
@@ -5038,7 +5344,10 @@ fn is_known_token(token: &str) -> bool {
         "ring-offset-",
     ];
 
-    KEYWORDS.contains(&token) || PREFIXES.iter().any(|p| token.starts_with(p))
+    let (_, inner) = split_state_prefix(token);
+
+    // From here on, check `inner` not `token`.
+    KEYWORDS.contains(&inner) || PREFIXES.iter().any(|p| inner.starts_with(p))
 }
 
 // ==============================================================
@@ -5059,7 +5368,9 @@ macro_rules! style_scale_dispatch {
     ($this:expr, $rest:expr, $prefix:ident; $($name:literal),* $(,)?) => {
         paste! {
             $(
-                if $rest == stringify!($name).replace('_', ".") {
+                if $rest == stringify!($name)
+                    || $rest == stringify!($name).replace('_', ".")
+                {
                     return $this.[<$prefix _ $name>]();
                 }
             )*
@@ -5067,7 +5378,30 @@ macro_rules! style_scale_dispatch {
     };
 }
 
+/// Apply a single class-string token to `this`.
+///
+/// Tokens may carry state prefixes (`dark:`, `hover:`, `focus-visible:`,
+/// …). Prefixed tokens are **stored** on `this` as state-conditional
+/// styles rather than applied immediately, so they can be folded in at
+/// render time when the actual state is known.
 fn style_token<T: StyleExt>(this: T, token: &str) -> T {
+    let (flags, inner) = split_state_prefix(token);
+
+    if flags.is_empty() {
+        apply_unprefixed_token(this, token)
+    } else {
+        // Build the state-conditional Style in isolation, then attach it.
+        let state_style = apply_unprefixed_token(Style::default(), inner);
+        this.state_style(flags, state_style)
+    }
+}
+
+/// Apply a token that has no state prefix to `this`.
+///
+/// This is the actual token dispatcher — every existing `match`, every
+/// `strip_prefix`, every colour lookup lives here, unchanged. Renamed
+/// from `style_token` so the new wrapper can sit on top.
+fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
     match token {
         "italic" => return this.italic(),
         "not-italic" => return this.not_italic(),
@@ -5163,6 +5497,9 @@ fn style_token<T: StyleExt>(this: T, token: &str) -> T {
         _ => {}
     }
 
+    if let Some(r) = token.strip_prefix("size-") {
+        return style_size(this, r);
+    }
     if let Some(r) = token.strip_prefix("order-") {
         return style_order(this, r);
     }
@@ -5330,6 +5667,20 @@ fn style_token<T: StyleExt>(this: T, token: &str) -> T {
 
 // ---------- Extended layout dispatchers ----------
 
+fn style_size<T: StyleExt>(this: T, rest: &str) -> T {
+    if rest == "full" {
+        return this.size_full();
+    }
+    paste! {
+        style_scale_dispatch!(this, rest, size;
+            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    }
+    if let Some(px) = parse_len(rest) {
+        return this.size(px);
+    }
+    this
+}
+
 fn style_order<T: StyleExt>(this: T, rest: &str) -> T {
     if let Ok(n) = rest.parse::<i32>() {
         this.order(n)
@@ -5361,23 +5712,15 @@ fn style_columns<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_space_x<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Some(px) = parse_len(rest) {
-        return this.space_x(px * SPACING_UNIT);
-    }
-    paste! {
-        style_scale_dispatch!(this, rest, space_x;
-            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    if let Some(units) = parse_len(rest) {
+        return this.space_x(units * SPACING_UNIT);
     }
     this
 }
 
 fn style_space_y<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Some(px) = parse_len(rest) {
-        return this.space_y(px * SPACING_UNIT);
-    }
-    paste! {
-        style_scale_dispatch!(this, rest, space_y;
-            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
+    if let Some(units) = parse_len(rest) {
+        return this.space_y(units * SPACING_UNIT);
     }
     this
 }
@@ -5386,10 +5729,6 @@ fn style_divide_x<T: StyleExt>(this: T, rest: &str) -> T {
     if let Some(px) = parse_len(rest) {
         return this.divide_x(px);
     }
-    paste! {
-        style_scale_dispatch!(this, rest, divide_x;
-            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-    }
     this
 }
 
@@ -5397,29 +5736,18 @@ fn style_divide_y<T: StyleExt>(this: T, rest: &str) -> T {
     if let Some(px) = parse_len(rest) {
         return this.divide_y(px);
     }
-    paste! {
-        style_scale_dispatch!(this, rest, divide_y;
-            0,0_5,1,1_5,2,2_5,3,3_5,4,5,6,7,8,9,10,11,12,14,16,20,24,28,32,36,40,44,48,52,56,60,64,72,80,96);
-    }
     this
 }
 
 fn style_divide_colour<T: StyleExt>(this: T, rest: &str) -> T {
-    match rest {
-        "transparent" => return this.divide_color(Color::TRANSPARENT),
-        "white" => {
-            let t = use_cn_theme().read();
-            return this.divide_color(t.colors.white);
-        }
-        "black" => {
-            let t = use_cn_theme().read();
-            return this.divide_color(t.colors.black);
-        }
-        _ => {}
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.divide_color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.divide_color(c);
+            return this.divide_color(with_alpha(c, alpha));
         }
     }
     this
@@ -5436,19 +5764,17 @@ fn style_outline<T: StyleExt>(this: T, rest: &str) -> T {
         "4" => return this.outline_width(4.0),
         "8" => return this.outline_width(8.0),
         "none" => return this.outline_none(),
-        "white" => {
-            let t = use_cn_theme().read();
-            return this.outline_color(t.colors.white);
-        }
-        "black" => {
-            let t = use_cn_theme().read();
-            return this.outline_color(t.colors.black);
-        }
         _ => {}
+    }
+
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.outline_color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.outline_color(c);
+            return this.outline_color(with_alpha(c, alpha));
         }
     }
     this
@@ -5480,20 +5806,17 @@ fn style_decoration<T: StyleExt>(this: T, rest: &str) -> T {
         "auto" => return this.decoration_from_font(),
         "from-font" => return this.decoration_from_font(),
         "solid" | "double" | "dotted" | "dashed" | "wavy" => return this,
-        "transparent" => return this.decoration_color(Color::TRANSPARENT),
-        "white" => {
-            let t = use_cn_theme().read();
-            return this.decoration_color(t.colors.white);
-        }
-        "black" => {
-            let t = use_cn_theme().read();
-            return this.decoration_color(t.colors.black);
-        }
         _ => {}
+    }
+
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.decoration_color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.decoration_color(c);
+            return this.decoration_color(with_alpha(c, alpha));
         }
     }
     this
@@ -5544,43 +5867,32 @@ fn style_overflow_y<T: StyleExt>(this: T, rest: &str) -> T {
 }
 
 fn style_accent<T: StyleExt>(this: T, rest: &str) -> T {
-    match rest {
-        "transparent" => return this.accent_color(Color::TRANSPARENT),
-        "white" => {
-            let t = use_cn_theme().read();
-            return this.accent_color(t.colors.white);
-        }
-        "black" => {
-            let t = use_cn_theme().read();
-            return this.accent_color(t.colors.black);
-        }
-        "auto" => return this,
-        _ => {}
+    if rest == "auto" {
+        return this;
+    }
+
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.accent_color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.accent_color(c);
+            return this.accent_color(with_alpha(c, alpha));
         }
     }
     this
 }
 
 fn style_caret<T: StyleExt>(this: T, rest: &str) -> T {
-    match rest {
-        "transparent" => return this.caret_color(Color::TRANSPARENT),
-        "white" => {
-            let t = use_cn_theme().read();
-            return this.caret_color(t.colors.white);
-        }
-        "black" => {
-            let t = use_cn_theme().read();
-            return this.caret_color(t.colors.black);
-        }
-        _ => {}
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.caret_color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.caret_color(c);
+            return this.caret_color(with_alpha(c, alpha));
         }
     }
     this
@@ -5589,54 +5901,21 @@ fn style_caret<T: StyleExt>(this: T, rest: &str) -> T {
 // ---------- Colour dispatchers ----------
 
 fn style_bg<T: StyleExt>(this: T, rest: &str) -> T {
-    match rest {
-        "background" => return this.bg_background(),
-        "foreground" => return this.bg_foreground(),
-        "primary" => return this.bg_primary(),
-        "primary-foreground" => return this.bg_primary_foreground(),
-        "secondary" => return this.bg_secondary(),
-        "secondary-foreground" => return this.bg_secondary_foreground(),
-        "muted" => return this.bg_muted(),
-        "muted-foreground" => return this.bg_muted_foreground(),
-        "accent" => return this.bg_accent(),
-        "accent-foreground" => return this.bg_accent_foreground(),
-        "destructive" => return this.bg_destructive(),
-        "destructive-foreground" => return this.bg_destructive_foreground(),
-        "card" => return this.bg_card(),
-        "card-foreground" => return this.bg_card_foreground(),
-        "popover" => return this.bg_popover(),
-        "popover-foreground" => return this.bg_popover_foreground(),
-        "border" => return this.bg_border(),
-        "input" => return this.bg_input(),
-        "ring" => return this.bg_ring(),
-        "sidebar" => return this.bg_sidebar(),
-        "sidebar-foreground" => return this.bg_sidebar_foreground(),
-        "sidebar-primary" => return this.bg_sidebar_primary(),
-        "sidebar-primary-foreground" => return this.bg_sidebar_primary_foreground(),
-        "sidebar-accent" => return this.bg_sidebar_accent(),
-        "sidebar-accent-foreground" => return this.bg_sidebar_accent_foreground(),
-        "sidebar-border" => return this.bg_sidebar_border(),
-        "sidebar-ring" => return this.bg_sidebar_ring(),
-        "disabled" => return this.bg_disabled(),
-        "disabled-foreground" => return this.bg_disabled_foreground(),
-        "chart-1" => return this.bg_chart_1(),
-        "chart-2" => return this.bg_chart_2(),
-        "chart-3" => return this.bg_chart_3(),
-        "chart-4" => return this.bg_chart_4(),
-        "chart-5" => return this.bg_chart_5(),
-        "white" => return this.bg_white(),
-        "black" => return this.bg_black(),
-        _ => {}
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.background(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.background(c);
+            return this.background(with_alpha(c, alpha));
         }
     }
     this
 }
 
 fn style_text<T: StyleExt>(this: T, rest: &str) -> T {
+    // Size and alignment tokens don't take a `/N` modifier.
     match rest {
         "xs" => return this.text_xs(),
         "sm" => return this.text_sm(),
@@ -5657,62 +5936,28 @@ fn style_text<T: StyleExt>(this: T, rest: &str) -> T {
         "justify" => return this.text_justify(),
         _ => {}
     }
-    match rest {
-        "background" => return this.text_background(),
-        "foreground" => return this.text_foreground(),
-        "primary" => return this.text_primary(),
-        "primary-foreground" => return this.text_primary_foreground(),
-        "secondary" => return this.text_secondary(),
-        "secondary-foreground" => return this.text_secondary_foreground(),
-        "muted" => return this.text_muted(),
-        "muted-foreground" => return this.text_muted_foreground(),
-        "accent" => return this.text_accent(),
-        "accent-foreground" => return this.text_accent_foreground(),
-        "destructive" => return this.text_destructive(),
-        "destructive-foreground" => return this.text_destructive_foreground(),
-        "card" => return this.text_card(),
-        "card-foreground" => return this.text_card_foreground(),
-        "popover" => return this.text_popover(),
-        "popover-foreground" => return this.text_popover_foreground(),
-        "border" => return this.text_border(),
-        "input" => return this.text_input(),
-        "ring" => return this.text_ring(),
-        "sidebar" => return this.text_sidebar(),
-        "sidebar-foreground" => return this.text_sidebar_foreground(),
-        "sidebar-primary" => return this.text_sidebar_primary(),
-        "sidebar-primary-foreground" => return this.text_sidebar_primary_foreground(),
-        "sidebar-accent" => return this.text_sidebar_accent(),
-        "sidebar-accent-foreground" => return this.text_sidebar_accent_foreground(),
-        "sidebar-border" => return this.text_sidebar_border(),
-        "sidebar-ring" => return this.text_sidebar_ring(),
-        "disabled" => return this.text_disabled(),
-        "disabled-foreground" => return this.text_disabled_foreground(),
-        "chart-1" => return this.text_chart_1(),
-        "chart-2" => return this.text_chart_2(),
-        "chart-3" => return this.text_chart_3(),
-        "chart-4" => return this.text_chart_4(),
-        "chart-5" => return this.text_chart_5(),
-        "white" => return this.text_white(),
-        "black" => return this.text_black(),
-        _ => {}
+
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.color(c);
+            return this.color(with_alpha(c, alpha));
         }
     }
     this
 }
 
 fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
+    // Width / style keywords don't accept `/N`.
     match rest {
         "" => return this.border(),
         "0" => return this.border_0(),
         "2" => return this.border_2(),
         "4" => return this.border_4(),
         "8" => return this.border_8(),
-        "primary" => return this.border_primary(),
-        "destructive" => return this.border_destructive(),
         "solid" => return this.border_solid(),
         "dashed" => return this.border_dashed(),
         "dotted" => return this.border_dotted(),
@@ -5726,6 +5971,7 @@ fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
         "y" => return this.border_y(1.0),
         _ => {}
     }
+    // Per-side width: `border-t-2`.
     if let Some((side, val)) = rest.split_once('-') {
         if let Some(px) = parse_len(val) {
             match side {
@@ -5739,12 +5985,19 @@ fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
             }
         }
     }
+    // Bare width: `border-3`.
     if let Some(px) = parse_len(rest) {
         return this.border_width(px);
     }
+
+    let (rest, alpha) = split_opacity(rest);
+
+    if let Some(c) = semantic_colour(rest) {
+        return this.border_color(with_alpha(c, alpha));
+    }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.border_color(c);
+            return this.border_color(with_alpha(c, alpha));
         }
     }
     this
@@ -5900,7 +6153,9 @@ macro_rules! style_scale {
         fn $fn_name<T: StyleExt>(this: T, rest: &str) -> T {
             paste! {
                 $(
-                    if rest == stringify!($name).replace('_', ".") {
+                    if rest == stringify!($name)
+                        || rest == stringify!($name).replace('_', ".")
+                    {
                         return this.[<$base _ $name>]();
                     }
                 )*
