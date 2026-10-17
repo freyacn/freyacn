@@ -14,14 +14,14 @@ pub enum ButtonVariant {
     Default,
 
     #[variant(
-        "border-border bg-background hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+        "border-border bg-background text-foreground hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
     )]
     Outline,
 
     #[variant("bg-secondary text-secondary-foreground hover:bg-secondary/80")]
     Secondary,
 
-    #[variant("hover:bg-muted hover:text-foreground dark:hover:bg-muted/50")]
+    #[variant("hover:bg-muted text-foreground dark:hover:bg-muted/50")]
     Ghost,
 
     #[variant(
@@ -94,13 +94,13 @@ pub enum ButtonSize {
 )]
 #[derive(Clone, PartialEq)]
 pub fn Button() {
-    let style = style
-        .clone()
+    let style = Style::default()
         .style(
             "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
         )
         .merge(variant.resolve())
-        .merge(size.resolve());
+        .merge(size.resolve())
+        .merge(style.clone());
 
     Div()
         .children(children.clone())

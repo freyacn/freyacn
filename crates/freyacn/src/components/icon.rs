@@ -28,7 +28,10 @@
 //! ## Sizing
 //!
 //! Icons default to `16×16` when no explicit size is set. If only one
-//! axis is set, the other mirrors it so the icon stays square.
+//! axis is set, the other mirrors it so the icon stays square. The
+//! resolved square size is applied only to the inner `SvgViewer`; the
+//! wrapping `Div` is left sizeless so it can grow to fit the SVG plus
+//! any padding the caller adds, without double-constraining the icon.
 
 use crate::prelude::*;
 
@@ -43,8 +46,6 @@ const DEFAULT_ICON_SIZE: f32 = 16.0;
 )]
 #[derive(PartialEq, Clone)]
 pub fn Icon() {
-    let mut style = style.clone();
-
     // Icons are square by convention. If only one axis was set, mirror it
     // on the other; if neither was set, use the built-in default.
     let (width, height) = match (&style.width, &style.height) {
@@ -57,13 +58,20 @@ pub fn Icon() {
         }
     };
 
+    // Take the size off the wrapper. If we forwarded it too, the `Div`
+    // and the `SvgViewer` would each claim the same dimensions, which
+    // clips the SVG whenever padding is added.
+    let mut wrapper_style = style.clone();
+    wrapper_style.width = None;
+    wrapper_style.height = None;
+
     let svg_viewer = SvgViewer::new(svg.clone()).width(width).height(height);
 
     // `style.text_color` is left as-is. When it's `None`, `Div` skips
     // the `.color(...)` call entirely, which lets Freya's text-style
     // cascade hand the parent's colour down to the SVG.
     Div()
-        .merge_style(style)
+        .merge_style(wrapper_style)
         .accessibility(accessibility.clone())
         .child(svg_viewer)
 }

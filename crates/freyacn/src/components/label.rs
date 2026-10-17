@@ -25,9 +25,23 @@
 //!     .text_lg()
 //!     .child(Label().text("Info").text_blue_500());
 //! ```
+//!
+//! ## Sizing
+//!
+//! A `Label` sizes to its content by default. Every size field set on
+//! the style is forwarded — `width`, `height`, and the `min_*` /
+//! `max_*` variants — so truncation inside a fixed-width column works
+//! out of the box:
+//!
+//! ```ignore
+//! Label()
+//!     .text("A very long headline that should be cut off")
+//!     .max_w_64()
+//!     .truncate();
+//! ```
 
+use crate::extensions::TextEllipsis;
 use crate::prelude::*;
-use freyacn::extensions::TextEllipsis;
 
 #[component(
     props(
@@ -94,16 +108,29 @@ pub fn Label() {
     let mut el = el.accessibility(accessibility.clone());
 
     // ── Layout ─────────────────────────────────────────────────────
-    // The label itself needs a size when one is set, but the parent
-    // usually controls layout — `Div` is the layout workhorse, `Label`
-    // is a leaf. Skip if the style didn't set a size so the label fits
-    // its content by default.
+    // A `Label` sizes to its content by default; the parent usually
+    // controls layout. Forward every size field the caller set so
+    // truncation inside a fixed-width column works, but never impose
+    // a default size — `Div` is the layout workhorse, `Label` is a
+    // leaf.
 
     if let Some(size) = style.width.clone() {
         el = el.width(size);
     }
     if let Some(size) = style.height.clone() {
         el = el.height(size);
+    }
+    if let Some(size) = style.min_width.clone() {
+        el = el.min_width(size);
+    }
+    if let Some(size) = style.min_height.clone() {
+        el = el.min_height(size);
+    }
+    if let Some(size) = style.max_width.clone() {
+        el = el.max_width(size);
+    }
+    if let Some(size) = style.max_height.clone() {
+        el = el.max_height(size);
     }
 
     el

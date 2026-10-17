@@ -46,7 +46,7 @@ use crate::prelude::*;
 /// changing `cols` on the parent re-renders the items with the new
 /// width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GridColumns(pub u32);
+pub struct GridColumns(pub i32);
 
 impl Default for GridColumns {
     fn default() -> Self {
@@ -56,7 +56,7 @@ impl Default for GridColumns {
 
 #[component(
     props(
-        cols: u32 = 2,
+        cols: i32 = 2,
     ),
     ext(style, children, key, event_handlers, accessibility),
 )]
@@ -148,8 +148,8 @@ pub fn Grid() {
 
 #[component(
     props(
-        span: u32 = 1,
-        row_span: u32 = 1,
+        span: i32 = 1,
+        row_span: i32 = 1,
     ),
     ext(style, children, key, accessibility),
 )]
