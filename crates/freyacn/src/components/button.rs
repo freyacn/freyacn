@@ -18,7 +18,7 @@ pub enum ButtonVariant {
     )]
     Outline,
 
-    #[variant("bg-secondary text-secondary-foreground")]
+    #[variant("bg-secondary text-secondary-foreground hover:bg-secondary/80")]
     Secondary,
 
     #[variant("hover:bg-muted hover:text-foreground dark:hover:bg-muted/50")]

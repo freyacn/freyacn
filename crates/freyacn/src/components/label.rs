@@ -31,13 +31,13 @@ use freyacn::extensions::TextEllipsis;
 
 #[component(
     props(
-        text: String,
+        text: String = String::new(),
     ),
     ext(style, accessibility, key),
 )]
 #[derive(PartialEq, Clone)]
 pub fn Label() {
-    let mut el = label().text(text.clone().unwrap_or_default());
+    let mut el = label().text(text.clone());
 
     // ── Inheritable text styles ────────────────────────────────────
     // Apply only when the caller set them, so the value the parent

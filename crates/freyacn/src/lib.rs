@@ -15,7 +15,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use crate::components::*;
     #[doc(inline)]
-    pub use crate::extensions::style::{StateFlags, Style, StyleExt};
+    pub use crate::extensions::style::{ScrollAxis, StateFlags, Style, StyleExt};
     #[doc(inline)]
     pub use crate::theme::{
         Colors, Theme, get_cn_theme_or_default, use_cn_theme, use_init_cn_theme,

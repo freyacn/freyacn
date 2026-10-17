@@ -152,6 +152,18 @@ pub enum PositionKind {
     Global,
 }
 
+/// Direction of a scroll container.
+///
+/// Freya's `Overflow` enum only has `None` and `Clip`, so scroll intent
+/// is captured separately and consumed by `Div` to decide whether to wrap
+/// the primitive in a `ScrollView`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollAxis {
+    Vertical,
+    Horizontal,
+    Both,
+}
+
 // ==============================================================
 // Macros — inherent Style methods
 // ==============================================================
@@ -517,6 +529,14 @@ pub struct Style {
     pub overflow_x: Option<Overflow>,
     pub overflow_y: Option<Overflow>,
 
+    // ---- Scroll / Grid ----
+    pub scroll_axis: Option<ScrollAxis>,
+    pub scrollbar: Option<bool>,
+    pub grid_cols: Option<u32>,
+    pub grid_rows: Option<u32>,
+    pub col_span: Option<u32>,
+    pub row_span: Option<u32>,
+
     pub direction: Option<Direction>,
     pub main_align: Option<Alignment>,
     pub cross_align: Option<Alignment>,
@@ -628,6 +648,12 @@ impl Default for Style {
             overflow: None,
             overflow_x: None,
             overflow_y: None,
+            scroll_axis: None,
+            scrollbar: None,
+            grid_cols: None,
+            grid_rows: None,
+            col_span: None,
+            row_span: None,
             direction: None,
             main_align: None,
             cross_align: None,
@@ -809,6 +835,13 @@ impl Style {
             overflow: other.overflow.or(self.overflow),
             overflow_x: other.overflow_x.or(self.overflow_x),
             overflow_y: other.overflow_y.or(self.overflow_y),
+
+            scroll_axis: other.scroll_axis.or(self.scroll_axis),
+            scrollbar: other.scrollbar.or(self.scrollbar),
+            grid_cols: other.grid_cols.or(self.grid_cols),
+            grid_rows: other.grid_rows.or(self.grid_rows),
+            col_span: other.col_span.or(self.col_span),
+            row_span: other.row_span.or(self.row_span),
 
             direction: other.direction.or(self.direction),
             main_align: other.main_align.or(self.main_align),
@@ -1001,6 +1034,40 @@ impl Style {
     }
     pub fn overflow(mut self, overflow: Overflow) -> Self {
         self.overflow = Some(overflow);
+        self
+    }
+    // ---- Scroll / Grid ----
+    pub fn scroll_axis(mut self, axis: ScrollAxis) -> Self {
+        self.scroll_axis = Some(axis);
+        self
+    }
+    pub fn overflow_scroll(self) -> Self {
+        self.scroll_axis(ScrollAxis::Vertical)
+    }
+    pub fn overflow_scroll_x(self) -> Self {
+        self.scroll_axis(ScrollAxis::Horizontal)
+    }
+    pub fn overflow_scroll_xy(self) -> Self {
+        self.scroll_axis(ScrollAxis::Both)
+    }
+    pub fn scrollbar(mut self, show: bool) -> Self {
+        self.scrollbar = Some(show);
+        self
+    }
+    pub fn grid_cols(mut self, n: u32) -> Self {
+        self.grid_cols = Some(n);
+        self
+    }
+    pub fn grid_rows(mut self, n: u32) -> Self {
+        self.grid_rows = Some(n);
+        self
+    }
+    pub fn col_span(mut self, n: u32) -> Self {
+        self.col_span = Some(n);
+        self
+    }
+    pub fn row_span(mut self, n: u32) -> Self {
+        self.row_span = Some(n);
         self
     }
     pub fn direction(mut self, dir: Direction) -> Self {
@@ -4369,6 +4436,34 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.overflow_y_none())
     }
 
+    fn scroll_axis(self, axis: ScrollAxis) -> Self {
+        self.map_style(|s| s.scroll_axis(axis))
+    }
+    fn overflow_scroll(self) -> Self {
+        self.map_style(|s| s.overflow_scroll())
+    }
+    fn overflow_scroll_x(self) -> Self {
+        self.map_style(|s| s.overflow_scroll_x())
+    }
+    fn overflow_scroll_xy(self) -> Self {
+        self.map_style(|s| s.overflow_scroll_xy())
+    }
+    fn scrollbar(self, show: bool) -> Self {
+        self.map_style(|s| s.scrollbar(show))
+    }
+    fn grid_cols(self, n: u32) -> Self {
+        self.map_style(|s| s.grid_cols(n))
+    }
+    fn grid_rows(self, n: u32) -> Self {
+        self.map_style(|s| s.grid_rows(n))
+    }
+    fn col_span(self, n: u32) -> Self {
+        self.map_style(|s| s.col_span(n))
+    }
+    fn row_span(self, n: u32) -> Self {
+        self.map_style(|s| s.row_span(n))
+    }
+
     // Table
     fn table_layout(self, t: TableLayout) -> Self {
         self.map_style(|s| s.table_layout(t))
@@ -5880,6 +5975,236 @@ fn parse_hex_color(s: &str) -> Option<Color> {
 }
 
 // ==============================================================
+// color-mix() support
+// ==============================================================
+
+/// OKLCH colour space. `l` is lightness (0.0–1.0), `c` is chroma
+/// (0.0–~0.4), `h` is hue in degrees (0.0–360.0).
+#[derive(Clone, Copy, Debug)]
+struct Oklch {
+    l: f32,
+    c: f32,
+    h: f32,
+}
+
+impl Oklch {
+    /// sRGB (0–255 per channel) to OKLCH.
+    fn from_srgb(r: u8, g: u8, b: u8) -> Self {
+        // sRGB → linear sRGB
+        let to_linear = |c: f32| {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let r = to_linear(r as f32 / 255.0);
+        let g = to_linear(g as f32 / 255.0);
+        let b = to_linear(b as f32 / 255.0);
+
+        // Linear sRGB → XYZ (D65)
+        let x = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+        let y = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+        let z = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+        // XYZ → OKLab
+        let l_ = (0.8189330101 * x + 0.3618667424 * y - 0.1288597137 * z).cbrt();
+        let m_ = (0.0329845436 * x + 0.9293118715 * y + 0.0361456387 * z).cbrt();
+        let s_ = (0.0482003018 * x + 0.2643662691 * y + 0.6338517070 * z).cbrt();
+
+        let ok_l = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+        let ok_a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+        let ok_b = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+
+        // OKLab → OKLCH
+        let c = (ok_a * ok_a + ok_b * ok_b).sqrt();
+        let h = ok_b.atan2(ok_a).to_degrees().rem_euclid(360.0);
+
+        Self { l: ok_l, c, h }
+    }
+
+    /// OKLCH to sRGB. Channels are clamped to gamut.
+    fn to_srgb(self) -> (u8, u8, u8) {
+        // OKLCH → OKLab
+        let h_rad = self.h.to_radians();
+        let ok_a = self.c * h_rad.cos();
+        let ok_b = self.c * h_rad.sin();
+        let ok_l = self.l;
+
+        // OKLab → XYZ
+        let l_ = ok_l + 0.3963377774 * ok_a + 0.2158037573 * ok_b;
+        let m_ = ok_l - 0.1055613458 * ok_a - 0.0638541728 * ok_b;
+        let s_ = ok_l - 0.0894841775 * ok_a - 1.2914855480 * ok_b;
+
+        let l = l_ * l_ * l_;
+        let m = m_ * m_ * m_;
+        let s = s_ * s_ * s_;
+
+        let x = 1.2270138511 * l - 0.5577999807 * m - 0.2812561490 * s;
+        let y = -0.0405801784 * l + 1.1122568696 * m - 0.0716766787 * s;
+        let z = -0.0763812845 * l - 0.4214819784 * m + 1.5861632204 * s;
+
+        // XYZ → linear sRGB
+        let r_lin = 4.0767416621 * x - 3.3077115913 * y + 0.2309699292 * z;
+        let g_lin = -1.2684380046 * x + 2.6097574011 * y - 0.3413193965 * z;
+        let b_lin = -0.0041960863 * x - 0.7034186147 * y + 1.7076147010 * z;
+
+        // Linear sRGB → sRGB (with clamping)
+        let to_srgb = |c: f32| {
+            let c = c.clamp(0.0, 1.0);
+            if c <= 0.0031308 {
+                12.92 * c
+            } else {
+                1.055 * c.powf(1.0 / 2.4) - 0.055
+            }
+        };
+
+        (
+            (to_srgb(r_lin) * 255.0).round() as u8,
+            (to_srgb(g_lin) * 255.0).round() as u8,
+            (to_srgb(b_lin) * 255.0).round() as u8,
+        )
+    }
+}
+
+/// Mix two OKLCH colours. `weight_b` is the share of `b` in the result.
+/// Hue interpolates the short way around the colour wheel.
+fn mix_oklch(a: Oklch, b: Oklch, weight_b: f32) -> Oklch {
+    let weight_a = 1.0 - weight_b;
+
+    let mut h_diff = b.h - a.h;
+    if h_diff > 180.0 {
+        h_diff -= 360.0;
+    } else if h_diff < -180.0 {
+        h_diff += 360.0;
+    }
+    let h = (a.h + h_diff * weight_b).rem_euclid(360.0);
+
+    Oklch {
+        l: a.l * weight_a + b.l * weight_b,
+        c: a.c * weight_a + b.c * weight_b,
+        h,
+    }
+}
+
+/// Decode a Tailwind arbitrary value: underscores become spaces.
+fn decode_bracket_value(s: &str) -> String {
+    s.replace('_', " ")
+}
+
+/// Parse a `color-mix(in <space>, <c1> [<p>%]?, <c2> [<p>%]?)` expression.
+///
+/// Supported colour spaces: `oklch`, `srgb`.
+/// Supported colours inside: `var(--token)`, `#hex`, `white`, `black`,
+/// `transparent`.
+fn parse_color_mix(expr: &str) -> Option<Color> {
+    let inner = expr
+        .strip_prefix("color-mix(")
+        .and_then(|s| s.strip_suffix(')'))?;
+
+    // color-mix's grammar has no nested commas in the arguments we care
+    // about, so a naive split is safe here.
+    let mut parts = inner.splitn(3, ',');
+    let space_part = parts.next()?.trim();
+    let c1_part = parts.next()?.trim();
+    let c2_part = parts.next()?.trim();
+
+    let space = space_part.strip_prefix("in ")?.trim();
+
+    let (c1, pct1) = parse_color_and_pct(c1_part)?;
+    let (c2, pct2) = parse_color_and_pct(c2_part)?;
+
+    // Normalize the weights. Both given → use as-is. One given → the
+    // other is its complement. Neither → 50/50.
+    let (w1, w2) = match (pct1, pct2) {
+        (Some(p1), Some(p2)) => (p1, p2),
+        (Some(p1), None) => (p1, 100.0 - p1),
+        (None, Some(p2)) => (100.0 - p2, p2),
+        (None, None) => (50.0, 50.0),
+    };
+    let total = w1 + w2;
+    if total <= 0.0 {
+        return None;
+    }
+    let weight_b = (w2 / total).clamp(0.0, 1.0);
+
+    match space {
+        "oklch" => {
+            let a = Oklch::from_srgb(c1.r(), c1.g(), c1.b());
+            let b = Oklch::from_srgb(c2.r(), c2.g(), c2.b());
+            let (r, g, b) = mix_oklch(a, b, weight_b).to_srgb();
+            Some(Color::from_argb(255, r, g, b))
+        }
+        "srgb" => {
+            // Component-wise interpolation in sRGB. Kept as a fallback for
+            // users who write `in srgb`.
+            let lerp = |a: u8, b: u8| -> u8 {
+                (a as f32 * (1.0 - weight_b) + b as f32 * weight_b).round() as u8
+            };
+            Some(Color::from_argb(
+                255,
+                lerp(c1.r(), c2.r()),
+                lerp(c1.g(), c2.g()),
+                lerp(c1.b(), c2.b()),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Parse a colour argument plus optional trailing percentage:
+/// `var(--secondary)` or `var(--foreground) 5%`.
+fn parse_color_and_pct(s: &str) -> Option<(Color, Option<f32>)> {
+    let s = s.trim();
+
+    if let Some((head, tail)) = s.rsplit_once(' ') {
+        if let Some(pct) = tail
+            .strip_suffix('%')
+            .and_then(|x| x.trim().parse::<f32>().ok())
+        {
+            if let Some(c) = parse_color_value(head.trim()) {
+                return Some((c, Some(pct)));
+            }
+        }
+    }
+
+    parse_color_value(s).map(|c| (c, None))
+}
+
+/// Parse a single colour value inside `color-mix(...)`.
+fn parse_color_value(s: &str) -> Option<Color> {
+    let s = s.trim();
+
+    // var(--token) → resolve against the theme.
+    if let Some(token) = s.strip_prefix("var(--").and_then(|x| x.strip_suffix(')')) {
+        return semantic_colour(token);
+    }
+
+    // #hex
+    if s.starts_with('#') {
+        return parse_hex_color(s);
+    }
+
+    // A couple of named colours.
+    match s {
+        "white" => return Some(Color::WHITE),
+        "black" => return Some(Color::BLACK),
+        "transparent" => return Some(Color::TRANSPARENT),
+        _ => {}
+    }
+
+    None
+}
+
+/// Entry point for a bracketed `color-mix(...)` token, e.g.
+/// `[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]`.
+fn parse_color_mix_bracket(s: &str) -> Option<Color> {
+    let inner = s.strip_prefix('[').and_then(|x| x.strip_suffix(']'))?;
+    let decoded = decode_bracket_value(inner);
+    parse_color_mix(&decoded)
+}
+
+// ==============================================================
 // Known-token lookup (used by `style_debug`)
 // ==============================================================
 
@@ -5912,6 +6237,10 @@ fn is_known_token(token: &str) -> bool {
         "global",
         "overflow-clip",
         "overflow-none",
+        "overflow-scroll",
+        "overflow-scroll-x",
+        "overflow-scroll-xy",
+        "grid",
         "bg-transparent",
         "text-transparent",
         "border",
@@ -6037,6 +6366,10 @@ fn is_known_token(token: &str) -> bool {
         "line-clamp-",
         "overflow-x-",
         "overflow-y-",
+        "grid-cols-",
+        "grid-rows-",
+        "col-span-",
+        "row-span-",
         "shrink-",
         "rotate-",
         "scale-",
@@ -6266,6 +6599,22 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
         "order-last" => return this.order_last(),
         "order-none" => return this.order_none(),
         "container" => return this.container(),
+        "overflow-scroll" => return this.overflow_scroll(),
+        "overflow-scroll-x" => return this.overflow_scroll_x(),
+        "overflow-scroll-xy" => return this.overflow_scroll_xy(),
+        "grid" => return this.content_flex().flex_wrap_content(),
+        "grid-cols-1" => return this.grid_cols(1),
+        "grid-cols-2" => return this.grid_cols(2),
+        "grid-cols-3" => return this.grid_cols(3),
+        "grid-cols-4" => return this.grid_cols(4),
+        "grid-cols-5" => return this.grid_cols(5),
+        "grid-cols-6" => return this.grid_cols(6),
+        "grid-cols-7" => return this.grid_cols(7),
+        "grid-cols-8" => return this.grid_cols(8),
+        "grid-cols-9" => return this.grid_cols(9),
+        "grid-cols-10" => return this.grid_cols(10),
+        "grid-cols-11" => return this.grid_cols(11),
+        "grid-cols-12" => return this.grid_cols(12),
         _ => {}
     }
 
@@ -6334,6 +6683,24 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
     }
     if let Some(r) = token.strip_prefix("overflow-y-") {
         return style_overflow_y(this, r);
+    }
+    if let Some(r) = token.strip_prefix("overflow-x-") {
+        return style_overflow_x(this, r);
+    }
+    if let Some(r) = token.strip_prefix("overflow-y-") {
+        return style_overflow_y(this, r);
+    }
+    if let Some(r) = token.strip_prefix("grid-cols-") {
+        return style_grid_cols(this, r);
+    }
+    if let Some(r) = token.strip_prefix("grid-rows-") {
+        return style_grid_rows(this, r);
+    }
+    if let Some(r) = token.strip_prefix("col-span-") {
+        return style_col_span(this, r);
+    }
+    if let Some(r) = token.strip_prefix("row-span-") {
+        return style_row_span(this, r);
     }
 
     // `ring-offset-` must be matched *before* `ring-` — the latter is a
@@ -6656,6 +7023,9 @@ fn style_divide_colour<T: StyleExt>(this: T, rest: &str) -> T {
         if let Some(c) = parse_hex_color(rest) {
             return this.divide_color(with_alpha(c, alpha));
         }
+        if let Some(c) = parse_color_mix_bracket(rest) {
+            return this.divide_color(with_alpha(c, alpha));
+        }
     }
     if let Some(c) = semantic_colour(rest) {
         return this.divide_color(with_alpha(c, alpha));
@@ -6668,17 +7038,16 @@ fn style_divide_colour<T: StyleExt>(this: T, rest: &str) -> T {
     this
 }
 
-fn style_outline<T: StyleExt>(this: T, rest: &str) -> T {
-    if let Some(px) = parse_len(rest) {
-        return this.outline_width(px);
-    }
+fn style_decoration<T: StyleExt>(this: T, rest: &str) -> T {
     match rest {
-        "0" => return this.outline_width(0.0),
-        "1" => return this.outline_width(1.0),
-        "2" => return this.outline_width(2.0),
-        "4" => return this.outline_width(4.0),
-        "8" => return this.outline_width(8.0),
-        "none" => return this.outline_none(),
+        "0" => return this.decoration_thickness(0.0),
+        "1" => return this.decoration_thickness(1.0),
+        "2" => return this.decoration_thickness(2.0),
+        "4" => return this.decoration_thickness(4.0),
+        "8" => return this.decoration_thickness(8.0),
+        "auto" => return this.decoration_from_font(),
+        "from-font" => return this.decoration_from_font(),
+        "solid" | "double" | "dotted" | "dashed" | "wavy" => return this,
         _ => {}
     }
 
@@ -6686,15 +7055,18 @@ fn style_outline<T: StyleExt>(this: T, rest: &str) -> T {
 
     if rest.starts_with('[') {
         if let Some(c) = parse_hex_color(rest) {
-            return this.outline_color(with_alpha(c, alpha));
+            return this.decoration_color(with_alpha(c, alpha));
+        }
+        if let Some(c) = parse_color_mix_bracket(rest) {
+            return this.decoration_color(with_alpha(c, alpha));
         }
     }
     if let Some(c) = semantic_colour(rest) {
-        return this.outline_color(with_alpha(c, alpha));
+        return this.decoration_color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.outline_color(with_alpha(c, alpha));
+            return this.decoration_color(with_alpha(c, alpha));
         }
     }
     this
@@ -6729,6 +7101,9 @@ fn style_ring<T: StyleExt>(this: T, rest: &str) -> T {
         if let Some(c) = parse_hex_color(rest) {
             return this.ring_color(with_alpha(c, alpha));
         }
+        if let Some(c) = parse_color_mix_bracket(rest) {
+            return this.ring_color(with_alpha(c, alpha));
+        }
     }
     if let Some(c) = semantic_colour(rest) {
         return this.ring_color(with_alpha(c, alpha));
@@ -6756,6 +7131,9 @@ fn style_ring_offset<T: StyleExt>(this: T, rest: &str) -> T {
     let (rest, alpha) = split_opacity(rest);
     if rest.starts_with('[') {
         if let Some(c) = parse_hex_color(rest) {
+            return this.ring_offset_color(with_alpha(c, alpha));
+        }
+        if let Some(c) = parse_color_mix_bracket(rest) {
             return this.ring_offset_color(with_alpha(c, alpha));
         }
     }
@@ -6787,6 +7165,9 @@ fn style_inset_ring<T: StyleExt>(this: T, rest: &str) -> T {
         if let Some(c) = parse_hex_color(rest) {
             return this.inset_ring_color(with_alpha(c, alpha));
         }
+        if let Some(c) = parse_color_mix_bracket(rest) {
+            return this.inset_ring_color(with_alpha(c, alpha));
+        }
     }
     if let Some(c) = semantic_colour(rest) {
         return this.inset_ring_color(with_alpha(c, alpha));
@@ -6799,16 +7180,17 @@ fn style_inset_ring<T: StyleExt>(this: T, rest: &str) -> T {
     this
 }
 
-fn style_decoration<T: StyleExt>(this: T, rest: &str) -> T {
+fn style_outline<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(px) = parse_len(rest) {
+        return this.outline_width(px);
+    }
     match rest {
-        "0" => return this.decoration_thickness(0.0),
-        "1" => return this.decoration_thickness(1.0),
-        "2" => return this.decoration_thickness(2.0),
-        "4" => return this.decoration_thickness(4.0),
-        "8" => return this.decoration_thickness(8.0),
-        "auto" => return this.decoration_from_font(),
-        "from-font" => return this.decoration_from_font(),
-        "solid" | "double" | "dotted" | "dashed" | "wavy" => return this,
+        "0" => return this.outline_width(0.0),
+        "1" => return this.outline_width(1.0),
+        "2" => return this.outline_width(2.0),
+        "4" => return this.outline_width(4.0),
+        "8" => return this.outline_width(8.0),
+        "none" => return this.outline_none(),
         _ => {}
     }
 
@@ -6816,15 +7198,18 @@ fn style_decoration<T: StyleExt>(this: T, rest: &str) -> T {
 
     if rest.starts_with('[') {
         if let Some(c) = parse_hex_color(rest) {
-            return this.decoration_color(with_alpha(c, alpha));
+            return this.outline_color(with_alpha(c, alpha));
+        }
+        if let Some(c) = parse_color_mix_bracket(rest) {
+            return this.outline_color(with_alpha(c, alpha));
         }
     }
     if let Some(c) = semantic_colour(rest) {
-        return this.decoration_color(with_alpha(c, alpha));
+        return this.outline_color(with_alpha(c, alpha));
     }
     if let Some((family, shade)) = rest.rsplit_once('-') {
         if let Some(c) = palette_colour(family, shade) {
-            return this.decoration_color(with_alpha(c, alpha));
+            return this.outline_color(with_alpha(c, alpha));
         }
     }
     this
@@ -6860,7 +7245,8 @@ fn style_line_clamp<T: StyleExt>(this: T, rest: &str) -> T {
 
 fn style_overflow_x<T: StyleExt>(this: T, rest: &str) -> T {
     match rest {
-        "auto" | "hidden" | "clip" => this.overflow_x(Overflow::Clip),
+        "auto" | "scroll" => this.overflow_scroll_x(),
+        "hidden" | "clip" => this.overflow_x(Overflow::Clip),
         "visible" => this.overflow_x(Overflow::None),
         _ => this,
     }
@@ -6868,7 +7254,8 @@ fn style_overflow_x<T: StyleExt>(this: T, rest: &str) -> T {
 
 fn style_overflow_y<T: StyleExt>(this: T, rest: &str) -> T {
     match rest {
-        "auto" | "hidden" | "clip" => this.overflow_y(Overflow::Clip),
+        "auto" | "scroll" => this.overflow_scroll(),
+        "hidden" | "clip" => this.overflow_y(Overflow::Clip),
         "visible" => this.overflow_y(Overflow::None),
         _ => this,
     }
@@ -6885,6 +7272,9 @@ fn style_accent<T: StyleExt>(this: T, rest: &str) -> T {
         if let Some(c) = parse_hex_color(rest) {
             return this.accent_color(with_alpha(c, alpha));
         }
+        if let Some(c) = parse_color_mix_bracket(rest) {
+            return this.accent_color(with_alpha(c, alpha));
+        }
     }
     if let Some(c) = semantic_colour(rest) {
         return this.accent_color(with_alpha(c, alpha));
@@ -6897,11 +7287,42 @@ fn style_accent<T: StyleExt>(this: T, rest: &str) -> T {
     this
 }
 
+fn style_grid_cols<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Ok(n) = rest.parse::<u32>() {
+        return this.grid_cols(n);
+    }
+    this
+}
+
+fn style_grid_rows<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Ok(n) = rest.parse::<u32>() {
+        return this.grid_rows(n);
+    }
+    this
+}
+
+fn style_col_span<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Ok(n) = rest.parse::<u32>() {
+        return this.col_span(n);
+    }
+    this
+}
+
+fn style_row_span<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Ok(n) = rest.parse::<u32>() {
+        return this.row_span(n);
+    }
+    this
+}
+
 fn style_caret<T: StyleExt>(this: T, rest: &str) -> T {
     let (rest, alpha) = split_opacity(rest);
 
     if rest.starts_with('[') {
         if let Some(c) = parse_hex_color(rest) {
+            return this.caret_color(with_alpha(c, alpha));
+        }
+        if let Some(c) = parse_color_mix_bracket(rest) {
             return this.caret_color(with_alpha(c, alpha));
         }
     }
@@ -6923,6 +7344,9 @@ fn style_bg<T: StyleExt>(this: T, rest: &str) -> T {
 
     if rest.starts_with('[') {
         if let Some(c) = parse_hex_color(rest) {
+            return this.background(with_alpha(c, alpha));
+        }
+        if let Some(c) = parse_color_mix_bracket(rest) {
             return this.background(with_alpha(c, alpha));
         }
     }
@@ -6959,7 +7383,9 @@ fn style_text<T: StyleExt>(this: T, rest: &str) -> T {
         _ => {}
     }
 
-    if rest.starts_with('[') && !rest.starts_with("[#") {
+    // Font-size arbitrary value: `text-[12.8px]`, but not `text-[#...]`
+    // and not `text-[color-mix(...)]`.
+    if rest.starts_with('[') && !rest.starts_with("[#") && !rest.starts_with("[color-mix(") {
         if let Some(px) = parse_len(rest) {
             return this.font_size(px);
         }
@@ -6969,6 +7395,9 @@ fn style_text<T: StyleExt>(this: T, rest: &str) -> T {
 
     if rest.starts_with('[') {
         if let Some(c) = parse_hex_color(rest) {
+            return this.color(with_alpha(c, alpha));
+        }
+        if let Some(c) = parse_color_mix_bracket(rest) {
             return this.color(with_alpha(c, alpha));
         }
     }
@@ -7024,6 +7453,9 @@ fn style_border<T: StyleExt>(this: T, rest: &str) -> T {
 
     if rest.starts_with('[') {
         if let Some(c) = parse_hex_color(rest) {
+            return this.border_color(with_alpha(c, alpha));
+        }
+        if let Some(c) = parse_color_mix_bracket(rest) {
             return this.border_color(with_alpha(c, alpha));
         }
     }
