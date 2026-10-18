@@ -1846,6 +1846,7 @@ dependencies = [
  "freya",
  "freya-core",
  "freya-icons",
+ "freya-skia-safe",
  "freyacn_macros",
  "paste",
  "rustc-hash",

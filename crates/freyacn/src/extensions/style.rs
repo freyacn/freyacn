@@ -62,6 +62,15 @@ pub enum Visibility {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObjectFit {
+    Fill,
+    Contain,
+    Cover,
+    None,
+    ScaleDown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UserSelect {
     None,
     Text,
@@ -740,6 +749,8 @@ pub struct Style {
 
     pub animation: Option<AnimationSpec>,
     pub transition: Option<TransitionSpec>,
+
+    pub object_fit: Option<ObjectFit>,
 }
 
 impl Default for Style {
@@ -857,6 +868,7 @@ impl Default for Style {
             states: Vec::new(),
             animation: None,
             transition: None,
+            object_fit: None,
         }
     }
 }
@@ -1043,6 +1055,8 @@ impl Style {
 
             animation: other.animation.or(self.animation),
             transition: other.transition.or(self.transition),
+
+            object_fit: other.object_fit.or(self.object_fit),
         }
     }
 
@@ -2539,6 +2553,26 @@ impl Style {
         let g = self.margin.unwrap_or_default();
         self.margin = Some(Gaps::new(g.top(), g.right(), g.bottom(), size));
         self
+    }
+
+    pub fn object_fit(mut self, fit: ObjectFit) -> Self {
+        self.object_fit = Some(fit);
+        self
+    }
+    pub fn object_contain(self) -> Self {
+        self.object_fit(ObjectFit::Contain)
+    }
+    pub fn object_cover(self) -> Self {
+        self.object_fit(ObjectFit::Cover)
+    }
+    pub fn object_fill(self) -> Self {
+        self.object_fit(ObjectFit::Fill)
+    }
+    pub fn object_none(self) -> Self {
+        self.object_fit(ObjectFit::None)
+    }
+    pub fn object_scale_down(self) -> Self {
+        self.object_fit(ObjectFit::ScaleDown)
     }
 
     // ---- Palette / semantic colours ----
@@ -4751,6 +4785,25 @@ pub trait StyleExt: Sized {
         self.map_style(|s| s.transition_none())
     }
 
+    fn object_fit(self, fit: ObjectFit) -> Self {
+        self.map_style(|s| s.object_fit(fit))
+    }
+    fn object_contain(self) -> Self {
+        self.map_style(|s| s.object_contain())
+    }
+    fn object_cover(self) -> Self {
+        self.map_style(|s| s.object_cover())
+    }
+    fn object_fill(self) -> Self {
+        self.map_style(|s| s.object_fill())
+    }
+    fn object_none(self) -> Self {
+        self.map_style(|s| s.object_none())
+    }
+    fn object_scale_down(self) -> Self {
+        self.map_style(|s| s.object_scale_down())
+    }
+
     ext_palette_family!(text, slate);
     ext_palette_family!(text, gray);
     ext_palette_family!(text, zinc);
@@ -6330,6 +6383,13 @@ fn parse_color_mix_bracket(s: &str) -> Option<Color> {
 // ==============================================================
 
 fn is_known_token(token: &str) -> bool {
+    // Negative tokens like `-ml-4`, `-top-2`, `-translate-y-1` are
+    // valid iff their positive counterpart is valid. Recursing once is
+    // enough — users never write `--ml-4`.
+    if let Some(rest) = token.strip_prefix('-') {
+        return is_known_token(rest);
+    }
+
     const KEYWORDS: &[&str] = &[
         "italic",
         "not-italic",
@@ -6609,6 +6669,134 @@ fn style_token<T: StyleExt>(this: T, token: &str) -> T {
     }
 }
 
+/// Parse a Tailwind spacing-scale suffix (`"4"`, `"0.5"`, `"96"`, …)
+/// into pixels (multiplied by `SPACING_UNIT`). Returns `None` for
+/// anything that isn't a known scale name — the caller falls through
+/// to `parse_len`, which handles `[10px]`, `2rem`, `50%`, etc.
+fn parse_spacing_scale(s: &str) -> Option<f32> {
+    let v: f32 = match s {
+        "0" => 0.0,
+        "0.5" | "0_5" => 0.5,
+        "1" => 1.0,
+        "1.5" | "1_5" => 1.5,
+        "2" => 2.0,
+        "2.5" | "2_5" => 2.5,
+        "3" => 3.0,
+        "3.5" | "3_5" => 3.5,
+        "4" => 4.0,
+        "5" => 5.0,
+        "6" => 6.0,
+        "7" => 7.0,
+        "8" => 8.0,
+        "9" => 9.0,
+        "10" => 10.0,
+        "11" => 11.0,
+        "12" => 12.0,
+        "14" => 14.0,
+        "16" => 16.0,
+        "20" => 20.0,
+        "24" => 24.0,
+        "28" => 28.0,
+        "32" => 32.0,
+        "36" => 36.0,
+        "40" => 40.0,
+        "44" => 44.0,
+        "48" => 48.0,
+        "52" => 52.0,
+        "56" => 56.0,
+        "60" => 60.0,
+        "64" => 64.0,
+        "72" => 72.0,
+        "80" => 80.0,
+        "96" => 96.0,
+        _ => return None,
+    };
+    Some(SPACING_UNIT * v)
+}
+
+/// Generates a handler that parses a scale suffix and applies it with
+/// the given sign to a `StyleExt` method.
+macro_rules! style_signed_length {
+    ($fn_name:ident, $base:ident, $sign:expr) => {
+        fn $fn_name<T: StyleExt>(this: T, rest: &str) -> T {
+            let sign: f32 = $sign;
+            if let Some(v) = parse_spacing_scale(rest) {
+                return this.$base(sign * v);
+            }
+            if let Some(px) = parse_len(rest) {
+                return this.$base(sign * px);
+            }
+            this
+        }
+    };
+}
+
+/// Generates a handler for negative margin tokens (`-m-4`, `-mx-2`, …).
+macro_rules! style_negative_spacing {
+    ($fn_name:ident, $base:ident) => {
+        fn $fn_name<T: StyleExt>(this: T, rest: &str) -> T {
+            if let Some(v) = parse_spacing_scale(rest) {
+                return this.$base(-v);
+            }
+            if let Some(px) = parse_len(rest) {
+                return this.$base(-px);
+            }
+            this
+        }
+    };
+}
+
+// ---- Negative margins ----------------------------------------
+style_negative_spacing!(style_m_negative, m);
+style_negative_spacing!(style_mx_negative, mx);
+style_negative_spacing!(style_my_negative, my);
+style_negative_spacing!(style_mt_negative, mt);
+style_negative_spacing!(style_mr_negative, mr);
+style_negative_spacing!(style_mb_negative, mb);
+style_negative_spacing!(style_ml_negative, ml);
+
+// ---- Positional (top/right/bottom/left/inset), positive and negative
+style_signed_length!(style_top, top, 1.0);
+style_signed_length!(style_top_negative, top, -1.0);
+style_signed_length!(style_right, right, 1.0);
+style_signed_length!(style_right_negative, right, -1.0);
+style_signed_length!(style_bottom, bottom, 1.0);
+style_signed_length!(style_bottom_negative, bottom, -1.0);
+style_signed_length!(style_left, left, 1.0);
+style_signed_length!(style_left_negative, left, -1.0);
+style_signed_length!(style_inset, inset, 1.0);
+style_signed_length!(style_inset_negative, inset, -1.0);
+style_signed_length!(style_inset_x, inset_x, 1.0);
+style_signed_length!(style_inset_x_negative, inset_x, -1.0);
+style_signed_length!(style_inset_y, inset_y, 1.0);
+style_signed_length!(style_inset_y_negative, inset_y, -1.0);
+
+// ---- Translate (maps to rendering offset) --------------------
+style_signed_length!(style_translate_x, offset_x, 1.0);
+style_signed_length!(style_translate_x_negative, offset_x, -1.0);
+style_signed_length!(style_translate_y, offset_y, 1.0);
+style_signed_length!(style_translate_y_negative, offset_y, -1.0);
+
+// ---- Negative space-x / space-y ------------------------------
+//
+// Matches the positive `style_space_x` / `style_space_y` behaviour:
+// `parse_len * SPACING_UNIT`. (Yes, the positive version has the same
+// quirk with `[10px]` — negative matches it byte-for-byte so the two
+// stay symmetric.)
+fn style_space_x_negative<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(units) = parse_len(rest) {
+        return this.space_x(-(units * SPACING_UNIT));
+    }
+    this
+}
+
+fn style_space_y_negative<T: StyleExt>(this: T, rest: &str) -> T {
+    if let Some(units) = parse_len(rest) {
+        return this.space_y(-(units * SPACING_UNIT));
+    }
+    this
+}
+
 fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
     if let Some(rest) = token.strip_prefix('-') {
         if let Some(r) = rest.strip_prefix("rotate-") {
@@ -6638,6 +6826,79 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
             "none" => this.transition_none(),
             _ => this,
         };
+    }
+    if let Some(rest) = token.strip_prefix('-') {
+        // Rotate / scale — pre-existing handlers
+        if let Some(r) = rest.strip_prefix("rotate-") {
+            return style_rotate_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("scale-") {
+            return style_scale_negative(this, r);
+        }
+
+        // Translate (must be checked before shorter prefixes)
+        if let Some(r) = rest.strip_prefix("translate-x-") {
+            return style_translate_x_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("translate-y-") {
+            return style_translate_y_negative(this, r);
+        }
+
+        // Space (child spacing, negative)
+        if let Some(r) = rest.strip_prefix("space-x-") {
+            return style_space_x_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("space-y-") {
+            return style_space_y_negative(this, r);
+        }
+
+        // Inset — `inset-x-` / `inset-y-` MUST come before `inset-`
+        if let Some(r) = rest.strip_prefix("inset-x-") {
+            return style_inset_x_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("inset-y-") {
+            return style_inset_y_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("inset-") {
+            return style_inset_negative(this, r);
+        }
+
+        // Positional
+        if let Some(r) = rest.strip_prefix("top-") {
+            return style_top_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("right-") {
+            return style_right_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("bottom-") {
+            return style_bottom_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("left-") {
+            return style_left_negative(this, r);
+        }
+
+        // Margins — `mx-`/`my-`/`mt-`/… before plain `m-`
+        if let Some(r) = rest.strip_prefix("mx-") {
+            return style_mx_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("my-") {
+            return style_my_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("mt-") {
+            return style_mt_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("mr-") {
+            return style_mr_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("mb-") {
+            return style_mb_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("ml-") {
+            return style_ml_negative(this, r);
+        }
+        if let Some(r) = rest.strip_prefix("m-") {
+            return style_m_negative(this, r);
+        }
     }
 
     match token {
@@ -6780,11 +7041,32 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
     if let Some(r) = token.strip_prefix("columns-") {
         return style_columns(this, r);
     }
-    if let Some(r) = token.strip_prefix("space-x-") {
-        return style_space_x(this, r);
+    if let Some(r) = token.strip_prefix("inset-x-") {
+        return style_inset_x(this, r);
     }
-    if let Some(r) = token.strip_prefix("space-y-") {
-        return style_space_y(this, r);
+    if let Some(r) = token.strip_prefix("inset-y-") {
+        return style_inset_y(this, r);
+    }
+    if let Some(r) = token.strip_prefix("inset-") {
+        return style_inset(this, r);
+    }
+    if let Some(r) = token.strip_prefix("top-") {
+        return style_top(this, r);
+    }
+    if let Some(r) = token.strip_prefix("right-") {
+        return style_right(this, r);
+    }
+    if let Some(r) = token.strip_prefix("bottom-") {
+        return style_bottom(this, r);
+    }
+    if let Some(r) = token.strip_prefix("left-") {
+        return style_left(this, r);
+    }
+    if let Some(r) = token.strip_prefix("translate-x-") {
+        return style_translate_x(this, r);
+    }
+    if let Some(r) = token.strip_prefix("translate-y-") {
+        return style_translate_y(this, r);
     }
     if let Some(r) = token.strip_prefix("divide-x-") {
         return style_divide_x(this, r);
@@ -6869,6 +7151,16 @@ fn apply_unprefixed_token<T: StyleExt>(this: T, token: &str) -> T {
     }
     if let Some(r) = token.strip_prefix("font-") {
         return style_font(this, r);
+    }
+    if let Some(rest) = token.strip_prefix("object-") {
+        return match rest {
+            "contain" => this.object_contain(),
+            "cover" => this.object_cover(),
+            "fill" => this.object_fill(),
+            "none" => this.object_none(),
+            "scale-down" => this.object_scale_down(),
+            _ => this,
+        };
     }
     if let Some(r) = token.strip_prefix("border-") {
         return style_border(this, r);

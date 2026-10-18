@@ -260,13 +260,20 @@ axis and cross axis: main-axis sides become real child `rect`s inside the
 visual, cross-axis sides become siblings in an opposite-direction wrapper.
 Both paths render on transparent backgrounds — no `bg-*` needed.
 
+> **`border-*` requires both width and colour.** `border-green-500` alone
+> sets only the border colour and renders nothing (same as CSS). Use
+> `border-2 border-green-500` — width *and* colour — or `.border_width(2.0)
+> .border_color(c)` for the method form.
+
 ### Effects
 
 - Opacity: `opacity_0`, `opacity_25`, `opacity_50`, `opacity_75`, `opacity_100`
 - Shadows: `shadow_sm`, `shadow_md`, `shadow_lg`, `shadow_xl`, `shadow_2xl`,
   `shadow_none`
 - Ring (Tailwind v4): `ring`, `ring_0` … `ring_8`, `ring_primary`,
-  `ring_offset`, `inset_ring`, plus palette and semantic colour variants
+  `ring_offset`, `inset_ring`, plus palette and semantic colour variants.
+  Freya 0.5.0-rc.10 does not yet render ring primitives — tokens parse but
+  are no-ops at paint time.
 - Outline: `outline_width`, `outline_color`, `outline_offset`, `outline_none`
 - Transforms: `rotate(deg)`, `scale(s)`, `transform_origin(o)`,
   `backdrop_blur(radius)` — blurs what's behind the element, matching CSS
@@ -345,6 +352,11 @@ aspect ratio, order, space, divide, outline, list, accent/caret, animations (`an
 state-conditional modifiers (`hover:`, `focus:`, `focus-visible:`,
 `active:`, `disabled:`, `dark:`, `first:`, `last:`, `odd:`, `even:`,
 `only:`, `not-hover:`, `group-hover:`, `has-hover:`).
+
+Negative forms (`-m-4`, `-mt-2`, `-space-x-2`, `-translate-y-1`, `-top-4`,
+`-rotate-45`, `-scale-90`) are supported wherever they make sense. `-*`
+prefixes resolve to negative lengths before hitting the corresponding
+positive helper.
 
 For typo hunting, `style_debug` reports unrecognised tokens:
 
@@ -545,7 +557,7 @@ companion macro `Card!(...)`.
 
 ## Components
 
-`freyacn` ships seven core primitives built with the macro engine and
+`freyacn` ships the core primitives built with the macro engine and
 Tailwind v4 styling.
 
 ### `Div`
@@ -608,6 +620,11 @@ component that reads `try_consume_context::<DivActiveState>()`) use it to
 inherit the parent's hover/focus/active/disabled flags. `inherit_state`
 controls whether `Div` itself inherits its own parent's flags; the default
 is `false` so a hovered row doesn't light up every child.
+
+`Div` also applies `Style::space_x` / `Style::space_y` as `margin-left` /
+`margin-top` on every child except the first — matching Tailwind's
+`space-x-*` / `space-y-*` semantics. Negative values (`-space-x-2`)
+produce overlap.
 
 ### `Button`
 
@@ -677,6 +694,148 @@ Button()
     .child(Icon().svg(chevron_down()).size_4())
     .child(Label().text("Open"))
 ```
+
+### `Image`
+
+A styled image primitive that mimics HTML's `<img>` and wraps Freya's
+native `image()`. Reads from a file path, caches the decoded handle
+keyed on `src`, and falls back gracefully when the file is missing.
+
+- **Props**: `src: String`, `bytes: Option<Bytes>`, `alt: String`,
+  `fit: ImageFit`, `sampling: SamplingMode`, `snap_to_grid: bool`,
+  `blur: f32`.
+- **Extensions**: `style`, `accessibility`, `event_handlers`, `key`.
+- **Supported formats** (via `skia_safe::Image::from_encoded`): PNG,
+  JPEG, WebP, GIF, BMP, ICO, WBMP. AVIF, HEIF, and TIFF when Skia is
+  built with the corresponding codecs. SVG is not supported — rasterise
+  first.
+- **`object-fit` mapping**:
+
+  | `ImageFit` | Freya `AspectRatio` | Freya `ImageCover` |
+      |------------|---------------------|--------------------|
+  | `Fill`     | `None` (stretch)    | `Fill`             |
+  | `Cover`    | `Max` (cover, crop) | `Center`           |
+  | `Contain`  | `Min` (fit inside)  | `Fill`             |
+  | `None`     | `Fit` (natural)     | `Fill`             |
+
+- **Style-string support**: `object-fill` / `object-cover` /
+  `object-contain` / `object-none` / `object-scale-down` map to `ImageFit`
+  and take precedence over the `fit` prop. `blur-*` tokens set
+  `ImageData::blur` and take precedence over the `blur` prop.
+  `rounded-*`, `shadow-*`, `border-*`, sizing, opacity, transforms,
+  position, and z-index all forward to the underlying image element.
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Image()
+    .src("assets/photo.webp")
+    .alt("Ada Lovelace")
+    .style("w-64 h-48 object-cover rounded-lg shadow-md blur-sm")
+```
+
+`bytes` bypasses the filesystem read but still decodes. If both `src`
+and `bytes` are set, `bytes` wins. Missing or corrupt sources render a
+muted placeholder sized to the caller's constraints.
+
+### `Avatar`
+
+A user/entity avatar built on top of `Image`, with an `AvatarFallback`
+slot, size/shape variants, and optional badge support.
+
+- **Props**: `src: String`, `bytes: Option<Bytes>`, `alt: String`.
+- **Variants**: `size: AvatarSize`, `shape: AvatarShape`.
+- **Struct fields**: `badge: Element` — set via `.badge(...)`.
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+`Avatar` renders its inner content in priority order:
+
+1. **Image** — if `bytes` is set or `src` names a non-empty file.
+2. **Children** — if any are present (typically an `AvatarFallback`).
+3. **Empty muted box** — otherwise.
+
+The image-existence check is cached on `src` via `use_state`, so the
+filesystem is only touched when `src` actually changes.
+
+- **`AvatarSize`**: `Xs` (24), `Md` (32, default), `Lg` (40), `Xl` (48),
+  `Xxl` (64). Fallback text size scales with the variant.
+- **`AvatarShape`**: `Circle` (`rounded-full`, default), `Rounded`
+  (`rounded-lg`), `Square` (`rounded-none`).
+- **`.fallback("AL")`** — shortcut for
+  `.child(AvatarFallback().child(Label().text("AL")))`.
+- **`.badge(...)`** — attaches an `AvatarBadge`; the avatar renders in a
+  positioning wrapper sized to the visible avatar so the badge lands at
+  the visible bottom-right corner.
+- **`.bordered()`** — explicit ring on a standalone avatar. Inside an
+  `AvatarGroup`, the ring comes from the group's padded wrapper.
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Avatar()
+    .src("assets/ada.jpg")
+    .alt("Ada Lovelace")
+    .fallback("AL")
+    .size(AvatarSize::Lg)
+    .badge(AvatarBadge().style("bg-green-500"))
+```
+
+### `AvatarFallback`
+
+The fallback slot for `Avatar`. Renders a muted, centered box that fills
+the avatar. Use directly for full control over content, or via
+`.fallback("AL")` on `Avatar` for the shortcut.
+
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+### `AvatarGroup`
+
+A horizontal row of overlapping avatars.
+
+- **Props**: `spacing: f32 = -8.0`.
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+Each child is wrapped in a `Div` with 2px padding filled with
+`theme.card` — that padded ring is the visual separator that makes
+overlapping avatars readable. Non-first children also get
+`.ml(spacing)` for overlap and `.z_index(i)` for stacking.
+
+```rust,no_run
+use freyacn::prelude::*;
+
+AvatarGroup()
+    .child(Avatar().src("a.jpg").alt("A").fallback("A").size(AvatarSize::Lg))
+    .child(Avatar().src("b.jpg").alt("B").fallback("B").size(AvatarSize::Lg))
+    .child(AvatarGroupCount().size(AvatarSize::Lg).count(5))
+```
+
+### `AvatarGroupCount`
+
+The "+N more" slot in an `AvatarGroup`. Styled like an avatar (muted
+background, centered, rounded) but meant to hold a short count string.
+
+- **Variants**: `size: AvatarSize`, `shape: AvatarShape`.
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+- **`.count(n)`** — shortcut for `.child(Label().text(format!("+{n}")))`.
+
+### `AvatarBadge`
+
+A small status indicator — the colored dot in the corner of an avatar.
+
+- **Variants**: `size: AvatarBadgeSize` (`Sm` 8px, `Md` 10px default,
+  `Lg` 12px, `Xl` 16px).
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+Positions absolutely at the bottom-right of its positioning context.
+`Avatar` supplies that context when `.badge(...)` is used, so the badge
+is a sibling of the clipped avatar image and not cut by its
+`overflow-clip`. Default color is `bg-primary`; override with
+`.style("bg-green-500")` or any bg token.
 
 ### `Divider`
 
@@ -906,6 +1065,8 @@ cargo run --example button
 cargo run --example icon
 cargo run --example label
 cargo run --example divider
+cargo run --example image
+cargo run --example avatar
 cargo run --example accordion
 ```
 

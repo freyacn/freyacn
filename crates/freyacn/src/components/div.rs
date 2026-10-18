@@ -39,6 +39,15 @@
 //! label always follows its parent's hover — while nested layout `Div`s
 //! keep the `false` default so a hovered row doesn't light up every
 //! child.
+//!
+//! ## `space-x-*` / `space-y-*`
+//!
+//! `space_x` and `space_y` are applied as `margin-left` / `margin-top`
+//! on every child **except the first**, matching Tailwind's
+//! `space-x-*` / `space-y-*` semantics. Negative values
+//! (`-space-x-2`) produce overlap. `gap-*` (via `Style::spacing`) is
+//! applied independently on the parent, so `gap-2 space-x-1` produces
+//! both a 8px gap and a 4px left margin on non-first children.
 
 use crate::extensions::{AnimationName, DivActiveState, DivPosition, GroupState, TextEllipsis};
 use crate::prelude::*;
@@ -242,6 +251,12 @@ pub fn Div() {
     let total = children.len();
     let grid_cols = style.grid_cols;
 
+    // NEW: pull `space_x` / `space_y` out of `Style` once so every
+    // child-iteration branch can pass them to `WithPosition`.
+    // `gap-*` (via `Style::spacing` above) is independent — both apply.
+    let space_x_val = style.space_x.unwrap_or(0.0);
+    let space_y_val = style.space_y.unwrap_or(0.0);
+
     let has_rounded_corners = style.corner_radius.is_some();
 
     let mut visual = rect()
@@ -330,6 +345,8 @@ pub fn Div() {
                             WithPosition()
                                 .index(i)
                                 .total(total)
+                                .space_x(space_x_val)
+                                .space_y(space_y_val)
                                 .child(child.clone())
                                 .into_element(),
                         ),
@@ -341,6 +358,8 @@ pub fn Div() {
                     WithPosition()
                         .index(i)
                         .total(total)
+                        .space_x(space_x_val)
+                        .space_y(space_y_val)
                         .child(child.clone())
                         .into_element(),
                 );
@@ -362,6 +381,8 @@ pub fn Div() {
                         WithPosition()
                             .index(i)
                             .total(total)
+                            .space_x(space_x_val)
+                            .space_y(space_y_val)
                             .child(child.clone())
                             .into_element(),
                     ),
@@ -373,6 +394,8 @@ pub fn Div() {
                 WithPosition()
                     .index(i)
                     .total(total)
+                    .space_x(space_x_val)
+                    .space_y(space_y_val)
                     .child(child.clone())
                     .into_element(),
             );
@@ -685,18 +708,36 @@ impl DivComponent {
 }
 
 #[component(
-    props(index: usize = 0, total: usize = 0),
+    props(
+        index: usize = 0,
+        total: usize = 0,
+        space_x: f32 = 0.0,
+        space_y: f32 = 0.0,
+    ),
     ext(children),
 )]
 #[derive(PartialEq, Clone)]
 fn WithPosition() -> impl IntoElement {
     let idx = *index;
     let tot = *total;
+    let sx = *space_x;
+    let sy = *space_y;
+
     use_provide_context(move || DivPosition {
         index: idx,
         total: tot,
     });
+
     let mut r = rect();
+
+    // `space-x-*` / `space-y-*` semantics: apply margin-left /
+    // margin-top to every child except the first. Negative values
+    // (from `-space-x-*`) produce overlap. `0.0` on both axes is a
+    // no-op, so the common "no spacing utility" case is unaffected.
+    if idx > 0 && (sx != 0.0 || sy != 0.0) {
+        r = r.margin(Gaps::new(sy, 0.0, 0.0, sx));
+    }
+
     for child in children.iter() {
         r = r.child(child.clone());
     }

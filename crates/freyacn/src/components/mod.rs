@@ -1,17 +1,21 @@
 pub mod accordion;
+pub mod avatar;
 pub mod button;
 pub mod div;
 pub mod divider;
 pub mod grid;
 pub mod group;
 pub mod icon;
+pub mod image;
 pub mod label;
 
 pub use accordion::*;
+pub use avatar::*;
 pub use button::*;
 pub use div::*;
 pub use divider::*;
 pub use grid::*;
 pub use group::*;
 pub use icon::*;
-pub use label::Label;
+pub use image::*;
+pub use label::*;

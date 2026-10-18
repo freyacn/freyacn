@@ -49,13 +49,14 @@ The library is built around five core ideas:
 
 ## Workspace layout
 
-The project is a Cargo workspace. Every crate lives in this repository.
+The project is the **`freyacn-cargo-workspace`** Cargo workspace. Every crate
+lives in this repository.
 
-| Crate            | Path              | Purpose                                                                               |
-|------------------|-------------------|---------------------------------------------------------------------------------------|
-| `freyacn`        | `freyacn/`        | Runtime library: `Style`, `StyleExt`, `Variant`, theme, components, extension traits. |
-| `freyacn-macros` | `freyacn-macros/` | Proc-macros: `#[component]`, `#[variant]`, `#[extensions]`, `#[struct_fields]`.       |
-| `freyacn-cli`    | `freyacn-cli/`    | Command-line tool for scaffolding, developing, building, and bundling FreyaCN apps.   |
+| Crate            | Path                     | Purpose                                                                               |
+|------------------|--------------------------|---------------------------------------------------------------------------------------|
+| `freyacn`        | `crates/freyacn/`        | Runtime library: `Style`, `StyleExt`, `Variant`, theme, components, extension traits. |
+| `freyacn-macros` | `crates/freyacn-macros/` | Proc-macros: `#[component]`, `#[variant]`, `#[extensions]`, `#[struct_fields]`.       |
+| `freyacn-cli`    | `crates/freyacn-cli/`    | Command-line tool for scaffolding, developing, building, and bundling FreyaCN apps.   |
 
 `freyacn` re-exports every macro from `freyacn-macros`, so users depend on
 `freyacn` only. `freyacn-macros` exists as a separate crate because proc-macro
@@ -88,15 +89,17 @@ directly.
   `Div` inherits this for free. Structural selectors (`first:`, `last:`,
   `odd:`, `even:`, `only:`), `not-hover:`, and `group-hover:` all fold
   through the same pipeline.
-- **Seven components** — `Div`, `Button`, `Label`, `Icon`, `Divider`, `Group`,
-  `Accordion`. Each ships with a runnable example.
+- **Thirteen core components** — `Div`, `Button`, `Label`, `Icon`, `Divider`,
+  `Group`, `Accordion`, `Image`, `Avatar`, `AvatarFallback`, `AvatarGroup`,
+  `AvatarGroupCount`, `AvatarBadge`. Each ships with a runnable example.
 - **Interactive-unit pattern** — children of an interactive widget are
   non-interactive by default and react to the parent's state via
   `DivActiveState` context. `Label` and `Icon` inherit hover automatically;
   opt in to self-hover per leaf with `.pointer-events-auto()`.
 - **style-string API** — `style("p-4 bg-primary hover:shadow-md")` parses
   Tailwind-style tokens. `style_debug` reports unrecognised tokens for typo
-  hunting.
+  hunting. Negative forms (`-m-4`, `-space-x-2`, `-translate-y-1`, `-top-4`)
+  are supported.
 - **Animations** — `animate-spin`, `animate-ping`, `animate-pulse`,
   `animate-bounce`, `animate-none` are parsed end-to-end and driven by
   Freya's `use_animation`.
@@ -526,7 +529,7 @@ chain the same way components do.
 `overflow`, `direction`, `main_align`, `cross_align`, `align_self`,
 `align_content`, `content`, `spacing`, `gap_x`, `gap_y`, `order`, `visibility`,
 `user_select`, `resize`, `pointer_events`, `aspect`, `columns`, `table_layout`,
-`border_collapse`, `list_style_type`, `list_style_position`.
+`border_collapse`, `list_style_type`, `list_style_position`, `object_fit`.
 
 ### Palette colours
 
@@ -583,6 +586,11 @@ across the flex main axis (rendered as child rects inside the visual) and the
 cross axis (rendered as siblings in an opposite-direction wrapper). No
 `bg-*` needed.
 
+> **`border-*` needs both width and colour.** `border-green-500` alone sets
+> only the border colour and renders nothing (same as CSS). Use
+> `border-2 border-green-500`, or the method form
+> `.border_width(2.0).border_color(c)`.
+
 ### Corner radius
 
 `rounded_none`, `rounded_sm`, `rounded`, `rounded_md`, `rounded_lg`,
@@ -596,6 +604,12 @@ Opacity (`opacity_0`, `opacity_25`, `opacity_50`, `opacity_75`,
 `ring_primary`, `ring_offset`, `inset_ring`), outline (`outline_width`,
 `outline_color`, `outline_offset`, `outline_none`), transforms (`rotate`,
 `scale`, `transform_origin`, `blur`).
+
+> **Ring tokens parse but do not render.** Freya 0.5.0-rc.10 has no ring
+> primitive; `ring-*` / `ring-offset-*` / `inset-ring-*` set
+> `Style::ring_width` and store the value, but nothing is painted. Use
+> `border-*` or `shadow-*` for the visual equivalent until the primitive
+> lands.
 
 `blur(radius)` sets the element's **backdrop** blur (CSS
 `backdrop-filter: blur()`), not element-self blur. Freya's renderer exposes
@@ -618,6 +632,10 @@ cross-axis (`items_start`, `items_center`, `items_end`), self alignment,
 content alignment, gaps (`gap`, `gap_x`, `gap_y`, `space_x`, `space_y`), and
 `order`.
 
+`space_x` / `space_y` apply `margin-left` / `margin-top` on every child
+except the first — matching Tailwind's `space-x-*` / `space-y-*`. Negative
+values (`-space-x-2`) produce overlap.
+
 ### Sizing
 
 Raw (`w`, `h`, `min_w`, `min_h`, `max_w`, `max_h`, `size`), percentages,
@@ -639,6 +657,16 @@ including fractional steps (`p_0_5`, `p_1_5`, `p_2_5`, `p_3_5`).
 
 `overflow_none`, `overflow_clip`, `overflow_scroll`, `overflow_scroll_x`,
 `overflow_scroll_xy`, and the per-axis clip / none helpers.
+
+> **Use `overflow-clip`, not `overflow-hidden`.** The token parser recognises
+> `overflow-clip` / `overflow-none` / `overflow-scroll*`. `overflow-hidden`
+> is not a token and parses to nothing.
+
+### Object fit
+
+`object_fit`, `object_fill`, `object_cover`, `object_contain`,
+`object_none`, `object_scale_down` map to the `ObjectFit` enum. Consumed by
+the `Image` component.
 
 ### Layout extras
 
@@ -681,6 +709,8 @@ accent/caret, animations (`animate-spin`, `animate-pulse`, `animate-bounce`,
 `focus-visible:`, `active:`, `disabled:`, `dark:`, `first:`, `last:`,
 `odd:`, `even:`, `only:`, `not-hover:`, `group-hover:`, `has-hover:`).
 
+Negative forms work everywhere they make sense: `-m-4`, `-mt-2`,
+`-space-x-2`, `-translate-y-1`, `-top-4`, `-rotate-45`, `-scale-90`.
 Unknown tokens are silently ignored (matching Tailwind's behaviour).
 
 ### `style_debug`
@@ -701,6 +731,8 @@ assert_eq!(unknown, vec!["shdaow-md", "not-a-thing"]);
 - **CSS Grid layout** — `grid-cols-*` is parsed but renders as flex wrap.
 - **Element-self blur** — `filter: blur()` has no Freya equivalent. Only
   `backdrop-filter: blur()` works (`backdrop_blur` on `Rect`).
+- **Ring primitives** — `ring-*`, `ring-offset-*`, `inset-ring-*` parse and
+  store, but Freya has no ring renderer. Use `border-*` or `shadow-*`.
 - **Responsive viewport-width prefixes** (`sm:`, `md:`, `lg:`) — no
   breakpoint system in Freya's renderer. Use `use_viewport()` in Rust code.
 - **Per-axis overflow-x / overflow-y that differ** — `Overflow` is a single
@@ -767,7 +799,7 @@ pub struct PlainBox;
 
 ## Components
 
-`freyacn` ships seven core primitives, built with the macro engine and
+`freyacn` ships thirteen core primitives, built with the macro engine and
 Tailwind v4 styling. Each one has a runnable example under `examples/`.
 
 ### `Div`
@@ -806,6 +838,10 @@ Any component that returns a `Div` gets `hover:` / `focus:` / `active:` /
 `disabled:` support for free. `Div` publishes its active `StateFlags` via
 `DivActiveState` context, so `Label` and any other state-sensitive leaf can
 react to the parent's state without being interactive themselves.
+
+`Div` also applies `Style::space_x` / `Style::space_y` as `margin-left` /
+`margin-top` on every child except the first — matching Tailwind's
+`space-x-*` / `space-y-*` semantics.
 
 ### `Button`
 
@@ -880,6 +916,147 @@ Non-interactive by default, so an `Icon` inside a `Button` or
 uses `currentColor`, so it picks up the parent's text colour through Freya's
 cascade. Opt in with `.pointer-events-auto()` for a standalone hoverable
 icon.
+
+### `Image`
+
+A styled image primitive that mimics HTML's `<img>` and wraps Freya's native
+`image()`. Reads from a file path or pre-read bytes, caches the decoded
+handle keyed on `src`, and falls back gracefully when the file is missing.
+
+- **Props**: `src: String`, `bytes: Option<Bytes>`, `alt: String`,
+  `fit: ImageFit`, `sampling: SamplingMode`, `snap_to_grid: bool`,
+  `blur: f32`.
+- **Extensions**: `style`, `accessibility`, `event_handlers`, `key`.
+- **Supported formats** (via `skia_safe::Image::from_encoded`): PNG, JPEG,
+  WebP, GIF, BMP, ICO, WBMP. AVIF, HEIF, and TIFF when Skia is built with
+  the corresponding codecs. SVG is not supported — rasterise first.
+- **`object-fit` mapping**:
+
+  | `ImageFit` | Freya `AspectRatio` | Freya `ImageCover` |
+        |------------|---------------------|--------------------|
+  | `Fill`     | `None` (stretch)    | `Fill`             |
+  | `Cover`    | `Max` (cover, crop) | `Center`           |
+  | `Contain`  | `Min` (fit inside)  | `Fill`             |
+  | `None`     | `Fit` (natural)     | `Fill`             |
+
+- **Style-string support**: `object-fill` / `object-cover` /
+  `object-contain` / `object-none` / `object-scale-down` map to `ImageFit`
+  and take precedence over the `fit` prop. `blur-*` tokens set
+  `ImageData::blur` and take precedence over the `blur` prop.
+  `rounded-*`, `shadow-*`, `border-*`, sizing, opacity, transforms,
+  position, and z-index all forward to the underlying image element.
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Image()
+    .src("assets/photo.webp")
+    .alt("Ada Lovelace")
+    .style("w-64 h-48 object-cover rounded-lg shadow-md blur-sm")
+```
+
+`bytes` bypasses the filesystem read but still decodes. If both `src` and
+`bytes` are set, `bytes` wins. Missing or corrupt sources render a muted
+placeholder sized to the caller's constraints.
+
+### `Avatar`
+
+A user/entity avatar built on top of `Image`, with an `AvatarFallback` slot,
+size/shape variants, and optional badge support.
+
+- **Props**: `src: String`, `bytes: Option<Bytes>`, `alt: String`.
+- **Variants**: `size: AvatarSize`, `shape: AvatarShape`.
+- **Struct fields**: `badge: Element` — set via `.badge(...)`.
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+`Avatar` renders its inner content in priority order:
+
+1. **Image** — if `bytes` is set or `src` names a non-empty file.
+2. **Children** — if any are present (typically an `AvatarFallback`).
+3. **Empty muted box** — otherwise.
+
+The image-existence check is cached on `src` via `use_state`, so the
+filesystem is only touched when `src` actually changes.
+
+- **`AvatarSize`**: `Xs` (24), `Md` (32, default), `Lg` (40), `Xl` (48),
+  `Xxl` (64). Fallback text size scales with the variant.
+- **`AvatarShape`**: `Circle` (`rounded-full`, default), `Rounded`
+  (`rounded-lg`), `Square` (`rounded-none`).
+- **`.fallback("AL")`** — shortcut for
+  `.child(AvatarFallback().child(Label().text("AL")))`.
+- **`.badge(...)`** — attaches an `AvatarBadge`; the avatar renders in a
+  positioning wrapper sized to the visible avatar so the badge lands at
+  the visible bottom-right corner.
+- **`.bordered()`** — explicit padded ring on a standalone avatar. Inside an
+  `AvatarGroup`, the ring comes from the group's padded wrapper.
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Avatar()
+    .src("assets/ada.jpg")
+    .alt("Ada Lovelace")
+    .fallback("AL")
+    .size(AvatarSize::Lg)
+    .badge(AvatarBadge().style("bg-green-500"))
+```
+
+### `AvatarFallback`
+
+The fallback slot for `Avatar`. Renders a muted, centered box that fills the
+avatar. Use directly for full control over content, or via
+`.fallback("AL")` on `Avatar` for the shortcut.
+
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+### `AvatarGroup`
+
+A horizontal row of overlapping avatars.
+
+- **Props**: `spacing: f32 = -8.0`.
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+Each child is wrapped in a `Div` with 2px padding filled with `theme.card` —
+that padded ring is the visual separator that makes overlapping avatars
+readable. Non-first children also get `.ml(spacing)` for overlap and
+`.z_index(i)` for stacking.
+
+```rust,no_run
+use freyacn::prelude::*;
+
+AvatarGroup()
+    .child(Avatar().src("a.jpg").alt("A").fallback("A").size(AvatarSize::Lg))
+    .child(Avatar().src("b.jpg").alt("B").fallback("B").size(AvatarSize::Lg))
+    .child(AvatarGroupCount().size(AvatarSize::Lg).count(5))
+```
+
+### `AvatarGroupCount`
+
+The "+N more" slot in an `AvatarGroup`. Styled like an avatar (muted
+background, centered, rounded) but meant to hold a short count string.
+
+- **Variants**: `size: AvatarSize`, `shape: AvatarShape`.
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+- **`.count(n)`** — shortcut for `.child(Label().text(format!("+{n}")))`.
+
+### `AvatarBadge`
+
+A small status indicator — the colored dot in the corner of an avatar.
+
+- **Variants**: `size: AvatarBadgeSize` (`Sm` 8px, `Md` 10px default,
+  `Lg` 12px, `Xl` 16px).
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+Positions absolutely at the bottom-right of its positioning context.
+`Avatar` supplies that context when `.badge(...)` is used, so the badge is a
+sibling of the clipped avatar image and not cut by its `overflow-clip`.
+Default color is `bg-primary`; override with `.style("bg-green-500")` or any
+bg token.
 
 ### `Divider`
 
@@ -1088,7 +1265,8 @@ impl TooltipExt for TooltippedLabelComponent {
 
 ## Examples
 
-Every component has a runnable showcase under `crates/freyacn/examples/`:
+Every component has a runnable showcase under
+`crates/freyacn/examples/` in the `freyacn-cargo-workspace`:
 
 ```bash
 cargo run --example div_showcase
@@ -1096,6 +1274,8 @@ cargo run --example button_showcase
 cargo run --example icon_showcase
 cargo run --example label_showcase
 cargo run --example divider_showcase
+cargo run --example image_showcase
+cargo run --example avatar_showcase
 cargo run --example accordion_showcase
 ```
 
@@ -1108,13 +1288,24 @@ accordion on three different backgrounds (`bg-muted`, `bg-background`,
 `bg-secondary`) to demonstrate that items inherit their container's surface
 and don't paint a background of their own.
 
+The image showcase covers all four `object-fit` modes, every `SamplingMode`
+variant, blur, snap-to-grid, embedded bytes, a missing-file fallback, and a
+long list to exercise scroll.
+
+The avatar showcase covers sizes, shapes, the `.fallback()` shortcut,
+explicit `AvatarFallback`, missing sources, embedded bytes, badges in all
+sizes and colours, `AvatarGroup` with default and custom spacing, and a
+`AvatarGroup + badges` composition.
+
 ---
 
 ## Roadmap
 
 - [ ] More components: `Card`, `Input`, `Select`, `Checkbox`, `Switch`,
   `Dialog`, `Tabs`, `Tooltip`, `Popover`, `Dropdown`.
-- [x] `Div`, `Button`, `Label`, `Icon`, `Divider`, `Group`, `Accordion`.
+- [x] `Div`, `Button`, `Label`, `Icon`, `Divider`, `Group`, `Accordion`,
+  `Image`, `Avatar`, `AvatarFallback`, `AvatarGroup`, `AvatarGroupCount`,
+  `AvatarBadge`.
 - [ ] `freyacn-cli` — a `dev` / `build` / `bundle` / `icon` flow matching the
   Tauri CLI's ergonomics.
 - [ ] Publish `freyacn`, `freyacn-macros`, and `freyacn-cli` to crates.io.
@@ -1139,6 +1330,17 @@ and don't paint a background of their own.
   children react via `DivActiveState`).
 - Accordion with single/multiple/collapsible modes, per-item disabled,
   animated open/close on click **and** single-mode auto-close.
+- `Image` component with path caching, bytes input, all `object-fit` modes,
+  all sampling modes, blur, snap-to-grid, and graceful missing-file fallback.
+- `Avatar` family: `Avatar`, `AvatarFallback`, `AvatarGroup`,
+  `AvatarGroupCount`, `AvatarBadge`, with size/shape variants, fallback
+  shortcut, automatic in-group ring, and per-item z-stacking.
+- Negative style-string tokens (`-m-4`, `-space-x-2`, `-translate-y-1`,
+  `-top-4`, `-rotate-45`, `-scale-90`).
+- `space_x` / `space_y` rendered by `Div` (margin-left / margin-top on every
+  child except the first).
+- `object-fit` tokens (`object-fill`, `object-cover`, `object-contain`,
+  `object-none`, `object-scale-down`).
 
 ---
 
@@ -1202,6 +1404,10 @@ Areas where help is especially useful:
 - `Rect`/`Label` inherent methods come from Freya's traits; `StyleExt`
   methods come from freyacn's trait. If both offer the same name, prefer the
   `Style`-based one for consistency with the rest of the crate.
+- Use `overflow-clip` (not `overflow-hidden`) in style strings — the parser
+  only recognises the former.
+- Prefer `border_width(...).border_color(...)` method calls over
+  `border-*` tokens when you need a border to render reliably.
 
 ---
 
@@ -1216,4 +1422,3 @@ MIT.
 - [Freya](https://github.com/marc2332/freya) — for the GUI framework.
 - [shadcn/ui](https://ui.shadcn.com) — for design inspiration.
 - [Tailwind CSS](https://tailwindcss.com) — for the utility-first philosophy.
-  |
