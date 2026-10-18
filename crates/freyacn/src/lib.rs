@@ -15,7 +15,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use crate::components::*;
     #[doc(inline)]
-    pub use crate::extensions::style::{ScrollAxis, StateFlags, Style, StyleExt};
+    pub use crate::extensions::style::{StyleExt, *};
     #[doc(inline)]
     pub use crate::theme::{
         Colors, Theme, get_cn_theme_or_default, use_cn_theme, use_init_cn_theme,
@@ -26,7 +26,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use crate::variants::Variant;
     #[doc(inline)]
-    pub use freya::icons::lucide::*;
+    pub use freya::icons::lucide::{image, radio, timer, *};
     #[doc(inline)]
     pub use freya::prelude::{Button as ButtonPrimitive, StyleExt as _, *};
     #[doc(inline)]

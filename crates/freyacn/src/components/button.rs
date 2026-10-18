@@ -1,6 +1,51 @@
-//! Button component — shadcn/ui styling on top of Freya's `Button`.
+//! # Button component — shadcn/ui styling on top of Freya's `Div`.
+//!
+//! ## Composition
+//!
+//! `Button` is a thin styling layer on top of `Div`. Every variant and
+//! size is expressed as a `#[variant]`-generated `Style`, merged into
+//! the base button styles.
+//!
+//! Interaction (hover, press, focus, disabled) is handled entirely by
+//! `Div`. `Button` does not own its own state — it just passes through
+//! the caller's optional `on_hover` and `on_press` callbacks.
+//!
+//! ## Accessibility
+//!
+//! `Button` forwards the caller's `accessibility` extension and sets a
+//! default `Role::Button` on the underlying `Div`, so screen readers
+//! announce it as a button. Callers can add a label via
+//! `Button().accessibility(AccessibilityData::new().alt("..."))`.
+//!
+//! `Button` does **not** expose per-field `a11y_*` props
+//! (`a11y_expanded`, `a11y_hidden`, etc.). Those are meant for
+//! disclosure triggers, helper elements, and similar, not for a button
+//! — reach for `Div` directly when you need them.
+//! ## Interactive unit
+//!
+//! The `Button`'s underlying `Div` is the interactive element. Its
+//! children — `Label`, `Icon`, badges — are non-interactive by
+//! default, so the button's `hover:` / `active:` styles stay applied
+//! when the pointer moves onto its label or icon. Hover and press
+//! state live on the button `Div` and propagate to descendants via
+//! `DivActiveState`.
+//!
+//! Callers adding their own children should not need to touch
+//! `pointer-events` — `Label` and `Icon` are non-interactive out of
+//! the box. If a child does need its own hover (e.g. a nested
+//! disclosure control), give it `.pointer-events-auto()`.
+//!
+//! ## Optional `on_hover`
+//!
+//! `on_hover` is `Option<EventHandler<...>>` rather than
+//! `EventHandler<...> = EventHandler::from(|_| {})`. An `EventHandler`
+//! default closure would be reconstructed on every render, making
+//! `Button`'s props compare as different each time and causing `Div`
+//! to re-render unnecessarily. The `Option` keeps props stable when
+//! the caller doesn't supply a handler.
 
 use crate::prelude::*;
+
 // ==============================================================
 // Variants
 // ==============================================================
@@ -14,7 +59,8 @@ pub enum ButtonVariant {
     Default,
 
     #[variant(
-        "border-border bg-background text-foreground hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+        "border-border bg-background text-foreground hover:bg-muted \
+         dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
     )]
     Outline,
 
@@ -25,7 +71,10 @@ pub enum ButtonVariant {
     Ghost,
 
     #[variant(
-        "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40"
+        "bg-destructive/10 text-destructive hover:bg-destructive/20 \
+         focus-visible:border-destructive/40 focus-visible:ring-destructive/20 \
+         dark:bg-destructive/20 dark:hover:bg-destructive/30 \
+         dark:focus-visible:ring-destructive/40"
     )]
     Destructive,
 
@@ -67,46 +116,45 @@ pub enum ButtonSize {
 // Component
 // ==============================================================
 
-/// A button.
-///
-/// # Examples
-///
-/// ```ignore
-/// Button().text("Save").on_press(|_| save());
-///
-/// Button()
-///     .text("Delete")
-///     .variant(ButtonVariant::Destructive)
-///     .size(ButtonSize::Lg)
-///     .on_press(|_| delete());
-/// ```
 #[component(
     props(
         disabled: bool = false,
         focusable: bool = true,
-        on_hover: EventHandler<Event<PointerEventData>> = EventHandler::from(|_: Event<PointerEventData>| {}),
+        on_hover: Option<EventHandler<Event<PointerEventData>>> = None,
     ),
     variants(
         variant: ButtonVariant = ButtonVariant::Default,
         size:    ButtonSize    = ButtonSize::Default,
     ),
-    ext(style, children, key, event_handlers),
+    ext(style, children, key, event_handlers, accessibility),
 )]
 #[derive(Clone, PartialEq)]
 pub fn Button() {
-    let style = Style::default()
+    let style = style
+        .clone()
         .style(
-            "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+            "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent \
+             bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none \
+             select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 \
+             disabled:opacity-50",
         )
         .merge(variant.resolve())
-        .merge(size.resolve())
-        .merge(style.clone());
+        .merge(size.resolve());
 
-    Div()
+    let mut div = Div()
         .children(children.clone())
-        .with_event_handlers(event_handlers.clone())
+        .event_handlers(event_handlers.clone())
+        // Forward caller-supplied accessibility metadata.
+        .accessibility(accessibility.clone())
+        // Default role — announced as a button to assistive tech.
+        .a11y_role(AccessibilityRole::Button)
         .merge_style(style)
         .disabled(disabled.clone())
-        .on_hover(on_hover.clone())
-        .focusable(focusable.clone())
+        .focusable(focusable.clone());
+
+    if let Some(handler) = on_hover.clone() {
+        div = div.on_hover(handler);
+    }
+
+    div
 }

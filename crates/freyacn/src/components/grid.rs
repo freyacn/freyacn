@@ -75,12 +75,11 @@ pub fn Grid() {
     cols_state.set(GridColumns(cols));
 
     // ── State folding ──────────────────────────────────────────────
-    let theme = use_cn_theme().read();
+    let theme = use_cn_theme();
     let mut active = StateFlags::NONE;
-    if theme.is_dark {
+    if theme.read().is_dark {
         active = active.or(StateFlags::DARK);
     }
-    drop(theme);
 
     let style = style.clone().with_active_states(active);
 
@@ -142,7 +141,7 @@ pub fn Grid() {
 
     container
         .accessibility(accessibility.clone())
-        .with_event_handlers(event_handlers.clone())
+        .event_handlers(event_handlers.clone())
         .into_element()
 }
 
@@ -166,12 +165,11 @@ pub fn GridItem() {
     let width_pct = (100.0 / cols as f32) * span as f32;
 
     // ── State folding ──────────────────────────────────────────────
-    let theme = use_cn_theme().read();
+    let theme = use_cn_theme();
     let mut active = StateFlags::NONE;
-    if theme.is_dark {
+    if theme.read().is_dark {
         active = active.or(StateFlags::DARK);
     }
-    drop(theme);
 
     let style = style.clone().with_active_states(active);
 
