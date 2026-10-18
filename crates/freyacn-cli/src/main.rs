@@ -5,29 +5,29 @@ use std::fs;
 
 #[derive(Parser)]
 #[command(
-    name = "freyacn",
+    name = "freyacn-cargo-workspace",
     version = "0.1.0",
     author = "Bright Madueke",
-    about = "Add freyacn components to your Freya project",
+    about = "Add freyacn-cargo-workspace components to your Freya project",
     long_about = "\
-    freyacn-cli manages freyacn components in your Freya project.
+    freyacn-cargo-workspace-cli manages freyacn-cargo-workspace components in your Freya project.
 
 Components are written into your project as source. There is no compiled
-freyacn dependency to pull in — you add a component, the CLI writes its
+freyacn-cargo-workspace dependency to pull in — you add a component, the CLI writes its
 files, and the code is yours from that point on. Edit it, extend it, or
 delete it.
 
 Typical workflow:
 
-  $ freyacn init
-  $ freyacn add button dialog card
+  $ freyacn-cargo-workspace init
+  $ freyacn-cargo-workspace add button dialog card
 
-Run `freyacn init` once per project. It creates `freyacn.toml`, sets up
+Run `freyacn-cargo-workspace init` once per project. It creates `freyacn-cargo-workspace.toml`, sets up
 theme tokens, and scaffolds the shared module that components depend on.
-After that, `freyacn add` brings in components as you need them, and
-`freyacn list` shows everything available.
+After that, `freyacn-cargo-workspace add` brings in components as you need them, and
+`freyacn-cargo-workspace list` shows everything available.
 
-Configuration lives in `freyacn.toml` at the project root. It records
+Configuration lives in `freyacn-cargo-workspace.toml` at the project root. It records
 where components are written, which registry to fetch from, and how the
 theme is structured. Commit it alongside your code.
 
@@ -86,7 +86,7 @@ fn initialize_project(
             // create the components/ui directory
             fs::create_dir_all(&new_dir.join("components/ui"))?;
 
-            // todo: check registry and create freyacn.toml
+            // todo: check registry and create freyacn-cargo-workspace.toml
         }
         None => {}
     }

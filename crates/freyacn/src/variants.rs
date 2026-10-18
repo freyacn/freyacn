@@ -19,7 +19,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use freyacn::{variant, Variant};
+//! use freyacn-cargo-workspace::{variant, Variant};
 //!
 //! #[variant]
 //! #[derive(Clone, Copy, PartialEq, Eq, Default)]

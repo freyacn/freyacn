@@ -14,6 +14,8 @@ A modern, shadcn/ui-inspired component library for
 extension traits, and a proc-macro layer that turns plain functions and enums
 into theme-aware, prop-driven components.
 
+**Targets Freya `0.5.0-rc.10`.**
+
 ---
 
 ## Overview
@@ -23,7 +25,7 @@ into theme-aware, prop-driven components.
 provides theme-aware, highly composable components with a Tailwind-inspired
 API, plus the macro machinery to author new components in plain Rust.
 
-The library is built around four core ideas:
+The library is built around five core ideas:
 
 1. **Theme-first** — every component reads the active theme via
    `use_cn_theme()`. Switching light/dark or changing the base colour updates
@@ -37,6 +39,11 @@ The library is built around four core ideas:
    manual prop plumbing.
 4. **shadcn/ui semantics** — component variants, sizes, and tokens follow the
    design language of shadcn/ui, making them immediately recognisable.
+5. **Single interactive unit per widget** — one element per component owns
+   pointer/focus/disabled state and the rest of the tree reacts to it
+   through context. This matches CSS `:hover` semantics and is the only
+   pattern that keeps `hover:` / `active:` styles stable as the pointer
+   moves across a widget's own children.
 
 ---
 
@@ -78,18 +85,31 @@ directly.
 - **State-aware `Div`** — the foundational primitive observes pointer, focus,
   disabled, and dark-mode state, then folds `hover:` / `focus:` / `active:` /
   `disabled:` / `dark:` layers automatically. Any component that returns a
-  `Div` inherits this for free.
+  `Div` inherits this for free. Structural selectors (`first:`, `last:`,
+  `odd:`, `even:`, `only:`), `not-hover:`, and `group-hover:` all fold
+  through the same pipeline.
+- **Seven components** — `Div`, `Button`, `Label`, `Icon`, `Divider`, `Group`,
+  `Accordion`. Each ships with a runnable example.
+- **Interactive-unit pattern** — children of an interactive widget are
+  non-interactive by default and react to the parent's state via
+  `DivActiveState` context. `Label` and `Icon` inherit hover automatically;
+  opt in to self-hover per leaf with `.pointer-events-auto()`.
 - **style-string API** — `style("p-4 bg-primary hover:shadow-md")` parses
   Tailwind-style tokens. `style_debug` reports unrecognised tokens for typo
   hunting.
-- **Tailwind v4 rings** — `ring`, `ring-offset`, and `inset-ring` utilities
-  are parsed end-to-end, with arbitrary-value and palette-colour variants.
+- **Animations** — `animate-spin`, `animate-ping`, `animate-pulse`,
+  `animate-bounce`, `animate-none` are parsed end-to-end and driven by
+  Freya's `use_animation`.
 - **Accessibility** — focus, keyboard navigation, and ARIA via Freya's
   accessibility traits, wired through the `accessibility` extension.
+  `Button` sets `Role::Button` by default; `AccordionTrigger` sets
+  `Role::Button` + `aria-expanded`; `Label` and content regions link
+  trigger-to-panel ids.
 - **Composable** — every component implements `ChildrenExt`, so nesting is
   natural.
-- **Performant** — leverages Freya's diffing and layout engine; only
-  re-renders what changes.
+- **Performant** — leverages Freya's diffing and layout engine; `Div` only
+  subscribes to its own animation tick, so unrelated `Div`s don't re-render
+  during an animation.
 
 ---
 
@@ -116,9 +136,9 @@ fn app() -> impl IntoElement {
     use_init_cn_theme(theme);
 
     Button()
-        .child("Click me")
+        .child(Label().text("Click me"))
         .variant(ButtonVariant::Default)
-        .size(ButtonSize::Md)
+        .size(ButtonSize::Default)
 }
 
 fn main() {
@@ -133,7 +153,6 @@ fn main() {
 ```rust,no_run
 use freyacn::prelude::*;
 
-/// Visual variants for a button.
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
@@ -151,10 +170,13 @@ pub enum ButtonVariant {
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonSize {
-    #[variant("text-xs px-2 py-1")]    Sm,
+    #[variant("text-xs px-2 py-1")]
+    Sm,
     #[variant("text-sm px-4 py-2")]
-    #[default] Md,
-    #[variant("text-base px-6 py-3")] Lg,
+    #[default]
+    Default,
+    #[variant("text-base px-6 py-3")]
+    Lg,
 }
 
 #[component(
@@ -162,7 +184,7 @@ pub enum ButtonSize {
     ext(children, style),
     variants(
         variant: ButtonVariant = ButtonVariant::Default,
-        size:    ButtonSize    = ButtonSize::Md,
+        size:    ButtonSize    = ButtonSize::Default,
     ),
 )]
 #[derive(Clone, PartialEq)]
@@ -170,7 +192,7 @@ fn CustomButton(text: String) {
     Div()
         .merge_style(style.clone())
         .children(children.clone())
-        .child(label().text(text.clone()))
+        .child(Label().text(text.clone()))
 }
 ```
 
@@ -179,8 +201,8 @@ Three equivalent ways to construct it:
 ```rust,no_run
 # use freyacn::prelude::*;
 # #[variant] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub enum ButtonVariant { #[default] #[variant("")] Default, #[variant("")] Destructive }
-# #[variant] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub enum ButtonSize { #[default] #[variant("")] Md }
-# #[component(ext(style), variants(variant: ButtonVariant = ButtonVariant::Default, size: ButtonSize = ButtonSize::Md))]
+# #[variant] #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)] pub enum ButtonSize { #[default] #[variant("")] Default }
+# #[component(ext(style), variants(variant: ButtonVariant = ButtonVariant::Default, size: ButtonSize = ButtonSize::Default))]
 # #[derive(Clone, PartialEq)] fn CustomButton(text: String) { Div() }
 CustomButton().text("Save").variant(ButtonVariant::Destructive);   // typed
 CustomButton().text("Save").variant("destructive");                // &str
@@ -222,7 +244,7 @@ Each group is optional and may appear in any order.
 ```rust
 #[component]
 fn Greeting(name: String) {
-    label().text(format!("Hello, {name}!"))
+    Label().text(format!("Hello, {name}!"))
 }
 
 Greeting().name("Ada");           // OK
@@ -239,14 +261,10 @@ enough, and the macro wraps it.
 #[component(props(subtitle: String))]
 fn Heading(subtitle: String) {
     match subtitle {
-        Some(s) => label().text(s.as_str()),
+        Some(s) => Label().text(s.as_str()),
         None => Div(),
     }
 }
-
-h.subtitle("hi");                       // &str  → Some("hi".into())
-h.subtitle(Some("hi".to_string()));     // Option<String>
-h.subtitle(None);                       // Option<String>
 ```
 
 The setter takes `impl Into<Option<T>>`, which std's blanket
@@ -261,7 +279,7 @@ work.
     weight: String = "normal".to_string(),
 ))]
 fn Text(size: f32, weight: String) {
-    label().text(format!("{}pt {}", size, weight))
+    Label().text(format!("{}pt {}", size, weight))
 }
 ```
 
@@ -303,19 +321,9 @@ trait impls have somewhere to store data.
 fn Card(name: String) {
     let _ = tooltip.as_ref().map(|t| t.text.as_str()).unwrap_or("");
     let _ = hover_count;
-    Div().child(label().text(name.as_str()))
-}
-
-impl TooltipExt for CardComponent {
-    fn set_tooltip(&mut self, text: impl Into<String>) {
-        let tip = self.tooltip.get_or_insert_with(MyTooltip::default);
-        tip.text = text.into();
-    }
+    Div().child(Label().text(name.as_str()))
 }
 ```
-
-The point is to let users write `impl MyTrait for MyComponent` in plain Rust —
-no `RefCell<HashMap>`, no proc-macro registry.
 
 ### Extension fields — `ext(...)`
 
@@ -328,26 +336,11 @@ The component function does **not** need a return type or a trailing
 `.into()`. The macro wraps the body in a `Component::render` method whose
 signature is fixed.
 
-```rust
-#[component]
-fn Greeting(name: String) {
-    label().text(format!("Hello, {name}!"))   // no `-> impl IntoElement`, no `.into()`
-}
-```
-
 ### Attribute forwarding
 
 Every attribute on the function other than `#[doc]`, `#[struct_fields(...)]`,
 and the `#[component(...)]` groups is forwarded **verbatim** to the generated
 struct. The macro does not bake in any derives — you decide.
-
-```rust
-#[component(props(label: String))]
-#[derive(Clone, Debug, PartialEq, Hash)]
-#[cfg(feature = "experimental")]
-#[my_custom_macro(arg = 42)]
-fn Widget(label: String) { /* … */ }
-```
 
 ### Collision rules
 
@@ -397,11 +390,6 @@ pub enum ButtonVariant {
 | `XS`                   | `xs`                    |
 | `SecondaryDestructive` | `secondary-destructive` |
 
-### Fallback for unknown names
-
-`From<&str>` falls back to the first declared variant. Put your natural
-default first and mark it `#[default]`.
-
 ### Resolving to a `Style`
 
 `.resolve()` reads the active theme and parses the variant's style string. It
@@ -437,31 +425,19 @@ The render body then binds `style: &Style` to the merged value.
 
 ### Consequences
 
-**Overrides persist across variant changes.**
-
-```rust
-let mut b = Button()
-.variant("destructive")
-.bg_green_50();     // override
-
-b.variant("outline");   // base recomputes; the override still wins
-```
-
-After the second call, the effective background is still `green_50` — the
-`Outline` variant's `bg-transparent` is applied first, then overridden.
+**Overrides persist across variant changes.** Calling `.variant("outline")`
+on a button whose caller previously set `.bg_green_50()` recomputes the base
+layer but leaves user intent intact — the override still wins.
 
 **Every `StyleExt` call is an override.**
 
 ```rust
 Button()
-.variant("primary")
-.p_6()              // override padding — wins over the variant's px-4 py-2
+.variant(ButtonVariant::Default)
+.p_6()              // override padding — wins over the variant's px-2.5
 .text_xl()          // override font size
 .style("font-bold text-white")
 ```
-
-**Changing the variant leaves user intent intact.** If a caller explicitly
-set a property, they meant it.
 
 ### Merging primitives
 
@@ -486,11 +462,50 @@ the flag set yourself and call `with_active_states`:
 ```rust
 let mut active = StateFlags::NONE;
 if theme.is_dark        { active = active.or(StateFlags::DARK); }
-if * hovering.read()     { active = active.or(StateFlags::HOVER); }
+if * hovering.read() == HOVERED { active = active.or(StateFlags::HOVER); }
 if focus().is_focused() { active = active.or(StateFlags::FOCUS_VISIBLE); }
 
 let folded = style.with_active_states(active);
 ```
+
+---
+
+## Interactive units and pointer events
+
+Freya's hit tester routes each pointer event to the **topmost interactive**
+element under the pointer. When both a parent and a child are interactive,
+moving the pointer onto the child fires `pointer_leave` on the parent, which
+clears the parent's hover state — even though the pointer is still visually
+inside the parent.
+
+The whole crate follows one rule to avoid that:
+
+**The outermost element of a widget is the interactive unit. Its children are
+non-interactive and react to the parent's state via context.**
+
+Concretely:
+
+| Rule                                                                                                                                                                       | Where it lives                                |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
+| `Div` is interactive by default and publishes its active `StateFlags` via `DivActiveState` context.                                                                        | `div.rs`                                      |
+| `Label` and `Icon` default to `pointer_events = false`. Hover is inherited from the parent `Div` via `DivActiveState`.                                                     | `label.rs`, `icon.rs`                         |
+| Containers don't inherit their parent's state — `inherit_state` on `Div` defaults to `false`, so a hovered row doesn't light up every button inside it.                    | `div.rs`                                      |
+| Leaves that follow the parent (labels) opt in with `inherit_state = true`.                                                                                                 | `label.rs`                                    |
+| Hover / press state is tracked via `on_pointer_enter` / `on_pointer_leave` (not `over` / `out`, which bubble from children).                                               | `div.rs`, `label.rs`, `group.rs`, `button.rs` |
+| Hover state uses `State<u8>` with sentinel values (`IDLE = 1`, `HOVERED = 2`) mutated with `*state.write() = v`, so the reactive store never skips a `true → false` write. | `div.rs`, `label.rs`                          |
+
+If a child genuinely needs its own hover (a standalone `Label` in a list, an
+`Icon` acting as a button, an inline disclosure control), opt in per leaf:
+
+```rust,no_run
+Label()
+    .text("Hover me")
+    .style("pointer-events-auto hover:underline cursor-pointer")
+```
+
+Every showcase in the repo follows the pattern — the accordion's title
+`Label` is non-interactive and underlines via inherited hover, not
+`pointer-events-auto`.
 
 ---
 
@@ -550,9 +565,9 @@ families (`font_sans`, `font_serif`, `font_mono`), alignment (`text_left`,
 `decoration_thickness`, `underline_offset`), transform (`uppercase`,
 `lowercase`, `capitalize`, `normal_case`), extras (`whitespace_*`,
 `break_words`, `break_all`, `break_keep`, `text_ellipsis_set`, `text_clip`,
-`line_clamp`, `list_none`, `list_disc`, `list_decimal`, `list_inside`,
-`list_outside`, `accent_color`, `caret_color`, `selection_color`,
-`placeholder_color`, `line_height`, `letter_spacing`, `text_indent`).
+`line_clamp`, list style helpers, `accent_color`, `caret_color`,
+`selection_color`, `placeholder_color`, `line_height`, `letter_spacing`,
+`text_indent`).
 
 ### Borders
 
@@ -563,6 +578,11 @@ colour (`border_primary`, `border_destructive`, and palette tokens), style (`bor
 `border_none`), and per-side divide utilities (`divide_x`, `divide_y`,
 `divide_color`).
 
+**Per-side borders render on transparent backgrounds.** `Div` splits them
+across the flex main axis (rendered as child rects inside the visual) and the
+cross axis (rendered as siblings in an opposite-direction wrapper). No
+`bg-*` needed.
+
 ### Corner radius
 
 `rounded_none`, `rounded_sm`, `rounded`, `rounded_md`, `rounded_lg`,
@@ -570,12 +590,22 @@ colour (`border_primary`, `border_destructive`, and palette tokens), style (`bor
 
 ### Effects
 
-Opacity (`opacity_0`, `opacity_25`, `opacity_50`, `opacity_75`, `opacity_100`),
-shadows (`shadow_sm`, `shadow_md`, `shadow_lg`, `shadow_xl`, `shadow_2xl`,
-`shadow_none`), ring (`ring`, `ring_0` … `ring_8`, `ring_primary`,
-`ring_offset`, `inset_ring`), outline (`outline_width`, `outline_color`,
-`outline_offset`, `outline_none`), transforms (`rotate`, `scale`,
-`transform_origin`, `blur`).
+Opacity (`opacity_0`, `opacity_25`, `opacity_50`, `opacity_75`,
+`opacity_100`), shadows (`shadow_sm`, `shadow_md`, `shadow_lg`, `shadow_xl`,
+`shadow_2xl`, `shadow_none`), ring (`ring`, `ring_0` … `ring_8`,
+`ring_primary`, `ring_offset`, `inset_ring`), outline (`outline_width`,
+`outline_color`, `outline_offset`, `outline_none`), transforms (`rotate`,
+`scale`, `transform_origin`, `blur`).
+
+`blur(radius)` sets the element's **backdrop** blur (CSS
+`backdrop-filter: blur()`), not element-self blur. Freya's renderer exposes
+`Rect::backdrop_blur` and no element-self equivalent.
+
+### Animations
+
+`animate_spin`, `animate_ping`, `animate_pulse`, `animate_bounce`,
+`animate_none`. `Div` starts the animation on mount and drives the
+corresponding paint-time transform each frame.
 
 ### Flex
 
@@ -584,19 +614,15 @@ Direction (`flex_row`, `flex_col`), wrapping (`flex_wrap_content`,
 `content_normal`), flex sizing (`flex_1`, `grow`, `grow_0`, `shrink`,
 `shrink_0`, `shrink_1`), justification (`justify_start`, `justify_center`,
 `justify_end`, `justify_between`, `justify_around`, `justify_evenly`),
-cross-axis (`items_start`, `items_center`, `items_end`), self alignment (`self_start`, `self_center`, `self_end`),
-content alignment (`content_start`,
-`content_center`, `content_end`, `content_between`, `content_around`,
-`content_evenly`), gaps (`gap`, `gap_x`, `gap_y`, `space_x`, `space_y`), and
+cross-axis (`items_start`, `items_center`, `items_end`), self alignment,
+content alignment, gaps (`gap`, `gap_x`, `gap_y`, `space_x`, `space_y`), and
 `order`.
 
 ### Sizing
 
-Raw (`w`, `h`, `min_w`, `min_h`, `max_w`, `max_h`, `size`), percentages (`w_percent`, `h_percent`), keywords (`w_full`,
-`w_auto`, `h_full`,
-`h_auto`, `size_full`), Tailwind scale (`w_0` … `w_96`, `h_0` … `h_96`, plus
-`min_w_*`, `min_h_*`, `max_w_*`, `max_h_*`), aspect ratio (`aspect`,
-`aspect_square`, `aspect_video`, `aspect_auto`).
+Raw (`w`, `h`, `min_w`, `min_h`, `max_w`, `max_h`, `size`), percentages,
+keywords (`w_full`, `w_auto`, `h_full`, `h_auto`, `size_full`), Tailwind
+scale (`w_0` … `w_96`, plus `min_w_*` … `max_h_*`), aspect ratio.
 
 ### Spacing
 
@@ -611,8 +637,8 @@ including fractional steps (`p_0_5`, `p_1_5`, `p_2_5`, `p_3_5`).
 
 ### Overflow
 
-`overflow_none`, `overflow_clip`, `overflow_x_clip`, `overflow_y_clip`,
-`overflow_x_none`, `overflow_y_none`.
+`overflow_none`, `overflow_clip`, `overflow_scroll`, `overflow_scroll_x`,
+`overflow_scroll_xy`, and the per-axis clip / none helpers.
 
 ### Layout extras
 
@@ -625,10 +651,8 @@ including fractional steps (`p_0_5`, `p_1_5`, `p_2_5`, `p_3_5`).
 ### Merging
 
 - `Style::merge(self, other) -> Style` — `other` wins on every field it set.
-  Stack fields concatenate. `Gaps` fields merge per side.
 - `Style::or(self, defaults) -> Style` — `self` wins; `defaults` fills gaps.
 - `Style::merge_from(&mut self, other)` / `or_from` — in-place variants.
-- `Style::is_empty(&self) -> bool` — `true` iff the style equals the default.
 - `Style::with_active_states(self, flags) -> Style` — fold state-conditional
   styles matching `flags`.
 - `StyleExt::merge_style(other)` / `or_style(defaults)` — lift the above onto
@@ -649,11 +673,15 @@ let _ = Style::default().style("p-4 bg-primary text-white shadow-md font-bold");
 The parser understands the full Tailwind vocabulary that Freya can render —
 palette and semantic colours, opacity modifiers (`/80`), spacing, sizing (including `w-screen`), typography, borders,
 rings (`ring`, `ring-offset-*`,
-`inset-ring-*`), arbitrary bracket values (`text-[12.8px]`, `bg-[#ff0000]`),
-transforms (`rotate-*`, `scale-*`, `blur-*`), effects, flex, positioning,
-overflow, aspect ratio, order, space, divide, outline, list, accent/caret,
-and state-conditional modifiers (`hover:`, `focus:`, `focus-visible:`,
-`active:`, `disabled:`, `dark:`). Unknown tokens are silently ignored (matching Tailwind's behaviour).
+`inset-ring-*`), arbitrary bracket values (`text-[12.8px]`,
+`bg-[#ff0000]`), transforms (`rotate-*`, `scale-*`, `blur-*`), effects, flex,
+positioning, overflow, aspect ratio, order, space, divide, outline, list,
+accent/caret, animations (`animate-spin`, `animate-pulse`, `animate-bounce`,
+`animate-ping`), and state-conditional modifiers (`hover:`, `focus:`,
+`focus-visible:`, `active:`, `disabled:`, `dark:`, `first:`, `last:`,
+`odd:`, `even:`, `only:`, `not-hover:`, `group-hover:`, `has-hover:`).
+
+Unknown tokens are silently ignored (matching Tailwind's behaviour).
 
 ### `style_debug`
 
@@ -668,20 +696,19 @@ let (style, unknown) = Style::default()
 assert_eq!(unknown, vec!["shdaow-md", "not-a-thing"]);
 ```
 
-### State-aware styling and transforms
-
-State variants (`hover:`, `focus:`, `focus-visible:`, `active:`, `disabled:`,
-`dark:`) and transforms (`rotate-45`, `scale-95`, `blur-sm`) parse into
-conditional style layers. The `Div` component observes runtime pointer,
-focus, disabled, and dark-mode state and folds the active styles
-automatically.
-
 ### What is not representable in Freya today
 
-CSS Grid layout, CSS keyframe transitions/animations, backdrop
-blur/filters, and responsive viewport-width prefixes (`sm:`, `md:`, `lg:`).
-For viewport responsiveness and animations, Freya hooks (`use_viewport()`,
-`use_animation()`, etc.) can be used directly in Rust code.
+- **CSS Grid layout** — `grid-cols-*` is parsed but renders as flex wrap.
+- **Element-self blur** — `filter: blur()` has no Freya equivalent. Only
+  `backdrop-filter: blur()` works (`backdrop_blur` on `Rect`).
+- **Responsive viewport-width prefixes** (`sm:`, `md:`, `lg:`) — no
+  breakpoint system in Freya's renderer. Use `use_viewport()` in Rust code.
+- **Per-axis overflow-x / overflow-y that differ** — `Overflow` is a single
+  value.
+
+Everything else in the vocabulary renders. Per-side borders, animations,
+scroll containers, fixed positioning, and pointer/focus/hover state all work
+end-to-end.
 
 ---
 
@@ -713,8 +740,6 @@ assert_eq!(
 Extensions opt a struct into freyacn's built-in bundles. Each name maps to a
 field, an initialiser, a render-body local, and a trait impl.
 
-### Supported names
-
 | Name             | Trait                                | Field(s) added                                           | Trait method             |
 |------------------|--------------------------------------|----------------------------------------------------------|--------------------------|
 | `children`       | `freyacn::prelude::ChildrenExt`      | `children: Vec<Element>`                                 | `get_children`           |
@@ -723,10 +748,12 @@ field, an initialiser, a render-body local, and a trait impl.
 | `event_handlers` | `freyacn::prelude::EventHandlersExt` | `event_handlers: FxHashMap<EventName, EventHandlerType>` | `get_event_handlers`     |
 | `accessibility`  | `freyacn::prelude::AccessibilityExt` | `accessibility: AccessibilityData`                       | `get_accessibility_data` |
 
-### Standalone usage
+> **Freya 0.5 note.** `EventHandlersExt::with_event_handlers` was renamed to
+> `event_handlers`. All components in the workspace are on the new name; if
+> you're porting a struct from a 0.4-based project, update the call site
+> accordingly.
 
-The attribute works on hand-written structs too. The struct must derive or
-implement `Default` so the added fields can be initialised.
+Standalone usage:
 
 ```rust,no_run
 use freyacn::prelude::*;
@@ -740,26 +767,29 @@ pub struct PlainBox;
 
 ## Components
 
-`freyacn` ships core primitives built with the macro engine and Tailwind v4
-styling.
+`freyacn` ships seven core primitives, built with the macro engine and
+Tailwind v4 styling. Each one has a runnable example under `examples/`.
 
 ### `Div`
 
-The foundational, state-aware layout primitive. It wraps Freya's `rect()`,
+The foundational, state-aware layout primitive. Wraps Freya's `rect()`,
 forwards every `Style` field Freya can render, and owns all runtime state
-observation — so consumers never need to compute `StateFlags` themselves.
+observation — consumers never need to compute `StateFlags` themselves.
 
 - **State observation**: `DARK`, `HOVER`, `ACTIVE`, `FOCUS`,
-  `FOCUS_VISIBLE`, `DISABLED`. `Div` sets up pointer handlers, reads
-  `use_focus`, and folds the matching state-conditional styles at render
-  time.
-- **Full style surface**: forwards background, foreground, typography, font
-  width, text height, text shadows, corner radius, border, padding, margin,
-  all size constraints, position, overflow, flex layout, opacity, shadows,
-  z-index via layer, text overflow, pointer events, interactive,
-  rotate/scale/blur/transform-origin, child offsets, and accessibility.
-- **Props**: `disabled: bool`, `focusable: bool`, `on_hover:
-  EventHandler<Event<PointerEventData>>`.
+  `FOCUS_VISIBLE`, `DISABLED`, plus structural `FIRST` / `LAST` / `ODD` /
+  `EVEN` / `ONLY` and `GROUP_HOVER` / `GROUP_FOCUS` from an ancestor
+  `Group`.
+- **Full style surface**: background, foreground, typography, font width,
+  text height, text shadows, corner radius, borders (uniform and per-side),
+  padding, margin, size constraints, position, overflow, flex layout,
+  opacity, shadows, z-index via layer, text overflow, pointer events,
+  interactive, rotate / scale / backdrop-blur / transform-origin, child
+  offsets, animations, and accessibility.
+- **Props**: `disabled`, `focusable`, `inherit_state` (default `false`),
+  `custom_a11y_id`, `a11y_role`, `a11y_expanded`, `a11y_labelled_by`,
+  `a11y_hidden`.
+- **Interaction callbacks**: `on_hover`, `on_press`.
 
 ```rust,no_run
 use freyacn::prelude::*;
@@ -768,12 +798,14 @@ Div()
     .style("p-4 bg-card text-card-foreground rounded-lg border shadow-sm")
     .focusable(true)
     .on_hover(|_| println!("hovered"))
-    .child(label().text("Card content"))
+    .on_press(|_| println!("pressed"))
+    .child(Label().text("Card content"))
 ```
 
-Because `Div` owns state folding, any component that returns a `Div` gets
-`hover:` / `focus:` / `active:` / `disabled:` support for free. Just hand it
-the merged style and let it observe.
+Any component that returns a `Div` gets `hover:` / `focus:` / `active:` /
+`disabled:` support for free. `Div` publishes its active `StateFlags` via
+`DivActiveState` context, so `Label` and any other state-sensitive leaf can
+react to the parent's state without being interactive themselves.
 
 ### `Button`
 
@@ -783,9 +815,15 @@ The primary interactive component, composited on top of `Div`.
   `Link`. Accepts string coercion: `.variant("outline")`.
 - **8 sizes**: `Default` (h-8), `Xs` (h-6), `Sm` (h-7), `Lg` (h-9), `Icon`
   (size-8), `IconXs`, `IconSm`, `IconLg`.
-- **Props**: `disabled: bool`, `focusable: bool`, `on_hover:
-  EventHandler<Event<PointerEventData>>`.
-- **Extensions**: `style`, `children`, `key`, `event_handlers`.
+- **Props**: `disabled`, `focusable`,
+  `on_hover: Option<EventHandler<Event<PointerEventData>>>`.
+- **Extensions**: `style`, `children`, `key`, `event_handlers`,
+  `accessibility`.
+
+`Button` forwards the caller's `accessibility` extension and sets
+`Role::Button` on the underlying `Div` by default, so screen readers announce
+it as a button. Add a label via
+`Button().accessibility(AccessibilityData::new().alt("..."))`.
 
 Content is passed as children, matching the shadcn/ui API:
 
@@ -793,15 +831,153 @@ Content is passed as children, matching the shadcn/ui API:
 use freyacn::prelude::*;
 
 Button()
-    .child(label().text("Delete item"))
-    .variant(ButtonVariant::Destructive)   // or .variant("destructive")
-    .size(ButtonSize::Lg)                  // or .size("lg")
+    .child(Label().text("Delete item"))
+    .variant(ButtonVariant::Destructive)
+    .size(ButtonSize::Lg)
     .on_press(|_| println!("Deleted!"));
 ```
 
-`Button` is a pure compositor: it builds a `Style` from base classes plus the
-variant and size resolutions, and hands it to `Div` via `.merge_style(...)`.
-All state observation is `Div`'s job.
+Children of the button (`Label`, `Icon`) are non-interactive by default, so
+the button's `hover:` / `active:` styles stay applied when the pointer is
+over its own label or icon.
+
+### `Label`
+
+A text primitive. Renders a `rect()` wrapper around Freya's `label()`, applies
+text styles to the label directly, and box styles to the wrapper. Owns its
+own hover / press / focus tracking, and inherits the parent `Div`'s active
+flags via `DivActiveState`.
+
+- **Props**: `text`, `disabled`, `focusable`, `inherit_state` (default
+  `true`), `custom_a11y_id`, `a11y_role`, `a11y_labelled_by`, `a11y_hidden`.
+- **Text styles**: colour, size, weight, slant, width, families, align,
+  decoration, height, shadow, truncation / line-clamp, line-height, case
+  transform.
+- **Box styles**: sizes (including `min_*` / `max_*`), opacity, rotate /
+  scale / backdrop-blur, positioning, events, a11y.
+- **Extensions**: `style`, `event_handlers`, `accessibility`.
+
+Non-interactive by default — a `Label` inside a `Button` or
+`AccordionTrigger` reacts to the parent's hover without stealing it. Opt in
+with `.pointer-events-auto()` for a standalone hoverable label:
+
+```rust,no_run
+Label()
+    .text("Hover me")
+    .style("pointer-events-auto hover:underline cursor-pointer")
+```
+
+### `Icon`
+
+A current-colour SVG. Wraps Freya's `SvgViewer` in a `Div`. Defaults to 16×16
+when no size is set; mirrors the other axis when only one is set.
+
+- **Props**: `svg: Bytes`.
+- **Extensions**: `style`, `accessibility`, `key`.
+
+Non-interactive by default, so an `Icon` inside a `Button` or
+`AccordionTrigger` reacts to the parent's hover without stealing it. The SVG
+uses `currentColor`, so it picks up the parent's text colour through Freya's
+cascade. Opt in with `.pointer-events-auto()` for a standalone hoverable
+icon.
+
+### `Divider`
+
+A 1px separating line. Horizontal by default (spans the parent's width);
+vertical (`DividerOrientation::Vertical`) spans the parent's height. Both are
+`shrink-0` so flex siblings can't squeeze them.
+
+Supports an optional centred label:
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Divider().label("OR");   // ───────────── OR ─────────────
+```
+
+- **Props**: `label`, `orientation`.
+- **Extensions**: `style`, `accessibility`, `key`.
+
+### `Group`
+
+Wraps a subtree and provides its hover / focus state to descendants via
+`GroupState`. Use it to enable `group-hover:` / `has-hover:` on any
+descendant. The row tracks hover with `on_pointer_enter` /
+`on_pointer_leave`; descendants read the flags from context.
+
+- **Props**: none.
+- **Extensions**: `style`, `children`, `accessibility`.
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Group()
+    .style("flex flex-row items-center gap-3 p-4 rounded-lg border cursor-pointer")
+    .child(Icon().svg(bell()).size_4())
+    .child(
+        Label()
+            .text("Hover this row")
+            .style("group-hover:underline group-hover:text-primary"),
+    )
+```
+
+### `Accordion`
+
+A shadcn-shaped accordion. Root / Item / Trigger / Content composition,
+single-open and multiple-open modes, per-item disabled, and animated
+open/close on both click and single-mode auto-close.
+
+- **Root props**: `type_`, `collapsible`, `disabled`,
+  `default_value: Option<Vec<String>>`.
+- **Item props**: `value`, `disabled`.
+- **Extensions**: `style`, `children`, `key`.
+
+The simple API:
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Accordion()
+    .type_(AccordionType::Single)
+    .collapsible(true)
+    .item("item-1", "Is it accessible?", "Yes — role=Button triggers.")
+    .item("item-2", "Is it animated?", "Yes — linear height and chevron.")
+```
+
+The compound API when you need custom trigger children:
+
+```rust,no_run
+use freyacn::prelude::*;
+
+Accordion()
+    .type_(AccordionType::Single)
+    .child(
+        AccordionItem()
+            .value("item-1")
+            .child(
+                AccordionTrigger()
+                    .style("flex-row items-center gap-3")
+                    .child(Icon().svg(bell()).size_4())
+                    .child(Label().text("Notifications").style("flex-1 hover:underline")),
+            )
+            .child(AccordionContent().child(Label().text("Body"))),
+    )
+```
+
+The trigger `Div` is the interactive unit; its `Label` and internal chevron
+are non-interactive, so the trigger keeps its `hover:` state across the
+whole row. `hover:underline` on the title label with `flex-1` underlines the
+title whenever the pointer is anywhere on the row.
+
+Height and chevron animations are **linear** (front-loaded easing curves read
+as "jumped then stuck" at 200–300ms) and durations are constants at the top
+of `accordion.rs`.
+
+Accessibility: `AccordionTrigger` sets `Role::Button` and `aria-expanded`;
+`AccordionContent` sets `Role::Region` and is hidden while closed.
+`AccordionItem` allocates trigger and content ids via `use_a11y()` and links
+them with `a11y_labelled_by`, so screen readers can navigate trigger to
+panel.
 
 ---
 
@@ -837,37 +1013,35 @@ defaults, so `.theme_color(...)` must come after it. Per-palette shortcuts (`.st
 
 ```rust,no_run
 # use freyacn::prelude::*;
-let theme = use_cn_theme();
-let bg      = theme.read().background;
-let primary = theme.read().primary;
+// Bind the State first: in Freya 0.5, `State::read()` returns a guard
+// whose lifetime is tied to `&self`, so a temporary `State<Theme>`
+// can't be dropped at the semicolon.
+let state = use_cn_theme();
+let bg      = state.read().background;
+let primary = state.read().primary;
 ```
 
 All palette and semantic helpers read the theme at call time, so switching
 themes updates every component on the next render without reconstruction.
+
+`use_init_cn_theme` reuses an existing context if one exists. For a scoped
+override that always creates a fresh context, use `use_provide_cn_theme`.
+`get_cn_theme_or_default()` returns a `Readable<Theme>` and never panics —
+useful for built-in components that should work without an explicit provider.
 
 ---
 
 ## The CLI — `freyacn-cli`
 
 `freyacn-cli` is the workspace tool for developing, building, and shipping
-FreyaCN apps. Its command surface mirrors the Tauri CLI, so familiar
-workflows carry over directly:
+FreyaCN apps. Its command surface mirrors the Tauri CLI:
 
 ```bash
-# Run the app in dev mode with hot-reload
-freyacn dev
-
-# Produce a release build
-freyacn build
-
-# Package the app for the current platform (or all targets)
-freyacn bundle
-
-# Generate platform icons from a source PNG
-freyacn icon path/to/icon.png
-
-# Print environment and version info for bug reports
-freyacn info
+freyacn-cli dev            # run in dev mode with hot-reload
+freyacn-cli build          # produce a release build
+freyacn-cli bundle         # package the app for the current platform
+freyacn-cli icon icon.png  # generate platform icons
+freyacn-cli info           # print environment and version info
 ```
 
 Additional subcommands will land as the workspace tool matures. The CLI is
@@ -891,7 +1065,7 @@ fn PrimaryButton(label: String) {
     Div()
         .merge_style(style.clone())
         .children(children.clone())
-        .child(label().text(label.as_str()))
+        .child(Label().text(label.as_str()))
 }
 ```
 
@@ -912,14 +1086,27 @@ impl TooltipExt for TooltippedLabelComponent {
 
 ---
 
-## Example showcase
+## Examples
 
-The repository includes runnable examples under `freyacn/examples/`
-demonstrating every variant, size, icon placement, and interactive state.
+Every component has a runnable showcase under `crates/freyacn/examples/`:
 
 ```bash
-cargo run --example button_showcase -p freyacn
+cargo run --example div_showcase
+cargo run --example button_showcase
+cargo run --example icon_showcase
+cargo run --example label_showcase
+cargo run --example divider_showcase
+cargo run --example accordion_showcase
 ```
+
+Each showcase follows the same skeleton — `use_init_cn_theme` at the root, an
+outer `h-screen overflow-scroll` `Div`, and a `max-w-2xl mx-auto` column of
+`section(...)` cards — so it's easy to copy when writing a new one.
+
+The accordion showcase includes an **inheritance** section that puts the same
+accordion on three different backgrounds (`bg-muted`, `bg-background`,
+`bg-secondary`) to demonstrate that items inherit their container's surface
+and don't paint a background of their own.
 
 ---
 
@@ -927,6 +1114,7 @@ cargo run --example button_showcase -p freyacn
 
 - [ ] More components: `Card`, `Input`, `Select`, `Checkbox`, `Switch`,
   `Dialog`, `Tabs`, `Tooltip`, `Popover`, `Dropdown`.
+- [x] `Div`, `Button`, `Label`, `Icon`, `Divider`, `Group`, `Accordion`.
 - [ ] `freyacn-cli` — a `dev` / `build` / `bundle` / `icon` flow matching the
   Tauri CLI's ergonomics.
 - [ ] Publish `freyacn`, `freyacn-macros`, and `freyacn-cli` to crates.io.
@@ -936,9 +1124,21 @@ cargo run --example button_showcase -p freyacn
 - [ ] `resolve_with(&Theme)` for theme-explicit variant resolution outside a
   render context.
 - [ ] First-class support for the style-surface fields Freya doesn't yet
-  render (rings, outlines, per-axis overflow) as soon as the underlying
-  primitives land.
-- [ ] Migration guide for the 0.1 → 0.2 breaking changes.
+  render (rings, outlines) as soon as the underlying primitives land.
+- [ ] Element-self blur (`filter: blur()`) once Freya exposes a
+  `Rect::blur` equivalent.
+
+**Done since 0.2.0-alpha.1:**
+
+- Freya 0.5.0-rc.10 port.
+- Per-side borders render on transparent backgrounds.
+- Animations (`animate-*`).
+- `first:` / `last:` / `odd:` / `even:` / `only:`, `not-hover:`,
+  `group-hover:`, `has-hover:` structural and group selectors.
+- Interactive-units architecture (single interactive element per widget,
+  children react via `DivActiveState`).
+- Accordion with single/multiple/collapsible modes, per-item disabled,
+  animated open/close on click **and** single-mode auto-close.
 
 ---
 
@@ -957,10 +1157,24 @@ The 0.2 release is a substantial rewrite. The most visible changes:
 | `.class("…")`                                                                                             | `.style("…")`                              |
 | `Theme::base_color(name, dark)`                                                                           | `Theme::light()` / `Theme::dark()`         |
 
-The `Style` struct is source-compatible with the old per-trait storage in
-shape but adds many new fields. Custom impls that previously implemented
-multiple extension traits should implement `StyleExt` once and return
-`&mut Style`.
+Custom impls that previously implemented multiple extension traits should
+implement `StyleExt` once and return `&mut Style`.
+
+### 0.2.0-alpha.1 → current (Freya 0.5 port)
+
+- `EventHandlersExt::with_event_handlers` → `event_handlers`.
+- `State::read()` returns a guard tied to `&self`. Bind the state to a local
+  before reading: `let state = use_cn_theme(); state.read()...`.
+- `Rect::blur` removed. Use `backdrop_blur` for `backdrop-filter: blur()`.
+- `CornerRadius`'s fields are private. Use `.is_round()` or per-corner
+  accessors.
+- `Size::fill()` removed. Use `Size::percent(100.0)`.
+- `image`, `radio`, `timer` were added to both `freya::prelude` and
+  `freya::icons::lucide`. The prelude re-exports the lucide versions
+  explicitly to resolve the ambiguity.
+- Interactive-unit pattern: `Div`'s `inherit_state` defaults to `false`;
+  `Label` and `Icon` default to non-interactive; opt in with
+  `pointer-events-auto()` per leaf.
 
 ---
 
@@ -973,9 +1187,21 @@ and a short design discussion will save everyone time.
 Areas where help is especially useful:
 
 - New components and variants.
-- style-string parser coverage — new Tailwind tokens Freya can render.
+- Style-string parser coverage — new Tailwind tokens Freya can render.
 - Documentation and runnable examples.
 - Testing infrastructure for proc-macro output.
+
+### Guidelines
+
+- Every new component gets a runnable example under `examples/` that follows
+  the standard `section(...)` skeleton.
+- Components that own interaction follow the interactive-units pattern: the
+  outermost element is interactive, children are not, hover is inherited
+  through `DivActiveState`.
+- Never call `use_cn_theme().read()` inline — bind the state first.
+- `Rect`/`Label` inherent methods come from Freya's traits; `StyleExt`
+  methods come from freyacn's trait. If both offer the same name, prefer the
+  `Style`-based one for consistency with the rest of the crate.
 
 ---
 
@@ -990,3 +1216,4 @@ MIT.
 - [Freya](https://github.com/marc2332/freya) — for the GUI framework.
 - [shadcn/ui](https://ui.shadcn.com) — for design inspiration.
 - [Tailwind CSS](https://tailwindcss.com) — for the utility-first philosophy.
+  |

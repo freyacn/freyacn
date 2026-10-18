@@ -125,7 +125,7 @@ fn extension_for(
         },
 
         // -------------------------------------------------------------------
-        // style  →  freyacn::StyleExt
+        // style  →  freyacn-cargo-workspace::StyleExt
         // -------------------------------------------------------------------
         "style" => {
             // The `style` field itself is a plain `Style` — the user's
@@ -213,7 +213,7 @@ fn extension_for(
         },
 
         // -------------------------------------------------------------------
-        // accessibility  →  freyacn::AccessibilityExt
+        // accessibility  →  freyacn-cargo-workspace::AccessibilityExt
         // -------------------------------------------------------------------
         "accessibility" => Extension {
             fields: vec![quote! {
