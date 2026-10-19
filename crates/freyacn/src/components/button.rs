@@ -2,9 +2,14 @@
 //!
 //! ## Composition
 //!
-//! `Button` is a thin styling layer on top of `Div`. Every variant and
-//! size is expressed as a `#[variant]`-generated `Style`, merged into
-//! the base button styles.
+//! `Button` is a thin styling layer on top of `Div`. Its base styling,
+//! variants, and sizes all live inside `variants(...)` as a single
+//! string literal + variant props — the macro generates the fully
+//! merged `style` local:
+//!
+//! ```text
+//! base style  →  variant.resolve()  →  size.resolve()  →  user overrides
+//! ```
 //!
 //! Interaction (hover, press, focus, disabled) is handled entirely by
 //! `Div`. `Button` does not own its own state — it just passes through
@@ -19,30 +24,30 @@
 //!
 //! `Button` does **not** expose per-field `a11y_*` props
 //! (`a11y_expanded`, `a11y_hidden`, etc.). Those are meant for
-//! disclosure triggers, helper elements, and similar, not for a button
-//! — reach for `Div` directly when you need them.
+//! disclosure triggers, helper elements, and similar, not for a button —
+//! reach for `Div` directly when you need them.
+//!
 //! ## Interactive unit
 //!
 //! The `Button`'s underlying `Div` is the interactive element. Its
-//! children — `Label`, `Icon`, badges — are non-interactive by
-//! default, so the button's `hover:` / `active:` styles stay applied
-//! when the pointer moves onto its label or icon. Hover and press
-//! state live on the button `Div` and propagate to descendants via
-//! `DivActiveState`.
+//! children — `Label`, `Icon`, badges — are non-interactive by default,
+//! so the button's `hover:` / `active:` styles stay applied when the
+//! pointer moves onto its label or icon. Hover and press state live on
+//! the button `Div` and propagate to descendants via `DivActiveState`.
 //!
 //! Callers adding their own children should not need to touch
-//! `pointer-events` — `Label` and `Icon` are non-interactive out of
-//! the box. If a child does need its own hover (e.g. a nested
-//! disclosure control), give it `.pointer-events-auto()`.
+//! `pointer-events` — `Label` and `Icon` are non-interactive out of the
+//! box. If a child does need its own hover (e.g. a nested disclosure
+//! control), give it `.pointer-events-auto()`.
 //!
 //! ## Optional `on_hover`
 //!
 //! `on_hover` is `Option<EventHandler<...>>` rather than
 //! `EventHandler<...> = EventHandler::from(|_| {})`. An `EventHandler`
 //! default closure would be reconstructed on every render, making
-//! `Button`'s props compare as different each time and causing `Div`
-//! to re-render unnecessarily. The `Option` keeps props stable when
-//! the caller doesn't supply a handler.
+//! `Button`'s props compare as different each time and causing `Div` to
+//! re-render unnecessarily. The `Option` keeps props stable when the
+//! caller doesn't supply a handler.
 
 use crate::prelude::*;
 
@@ -51,6 +56,10 @@ use crate::prelude::*;
 // ==============================================================
 
 /// Visual variant of a [`Button`].
+///
+/// Each variant only carries what is *specific* to it — colour, border,
+/// background. Layout, typography, and disabled behaviour live in the
+/// base style inside `variants("…", …)` on [`Button`].
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
@@ -83,6 +92,10 @@ pub enum ButtonVariant {
 }
 
 /// Size of a [`Button`].
+///
+/// Each size only carries what is *specific* to it — height, padding,
+/// gap, text size. Layout shared with every size lives in the base
+/// style inside `variants("…", …)` on [`Button`].
 #[variant]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonSize {
@@ -123,6 +136,10 @@ pub enum ButtonSize {
         on_hover: Option<EventHandler<Event<PointerEventData>>> = None,
     ),
     variants(
+        "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent \
+         bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none \
+         select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 \
+         disabled:opacity-50",
         variant: ButtonVariant = ButtonVariant::Default,
         size:    ButtonSize    = ButtonSize::Default,
     ),
@@ -130,17 +147,10 @@ pub enum ButtonSize {
 )]
 #[derive(Clone, PartialEq)]
 pub fn Button() {
-    let style = style
-        .clone()
-        .style(
-            "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent \
-             bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none \
-             select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 \
-             disabled:opacity-50",
-        )
-        .merge(variant.resolve())
-        .merge(size.resolve());
-
+    // The macro has already built the fully-merged `style` local:
+    //   base style  +  variant.resolve()  +  size.resolve()  +  user overrides
+    //
+    // `style.clone()` produces the whole button style in one step.
     let mut div = Div()
         .children(children.clone())
         .event_handlers(event_handlers.clone())
@@ -148,9 +158,9 @@ pub fn Button() {
         .accessibility(accessibility.clone())
         // Default role — announced as a button to assistive tech.
         .a11y_role(AccessibilityRole::Button)
-        .merge_style(style)
-        .disabled(disabled.clone())
-        .focusable(focusable.clone());
+        .merge_style(style.clone())
+        .disabled(*disabled)
+        .focusable(*focusable);
 
     if let Some(handler) = on_hover.clone() {
         div = div.on_hover(handler);

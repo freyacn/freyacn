@@ -1,4 +1,5 @@
 pub mod accordion;
+pub mod alert;
 pub mod avatar;
 pub mod button;
 pub mod div;
@@ -10,6 +11,7 @@ pub mod image;
 pub mod label;
 
 pub use accordion::*;
+pub use alert::*;
 pub use avatar::*;
 pub use button::*;
 pub use div::*;

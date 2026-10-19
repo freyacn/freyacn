@@ -3,7 +3,7 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Expr, FnArg, Ident, ItemFn, Pat, PatType, Token, Type,
+    Attribute, Expr, FnArg, Ident, ItemFn, LitStr, Pat, PatType, Token, Type,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
 };
@@ -69,6 +69,11 @@ struct ComponentArgs {
     props: Vec<PropDecl>,
     ext: Vec<String>,
     variants: Vec<PropDecl>,
+    /// Optional leading string literal inside `variants(...)` — e.g.
+    /// `variants("p-4 w-3", size: ButtonSize = ButtonSize::Default)`.
+    /// Applied at the bottom of the style merge chain, so variants and
+    /// user overrides still win.
+    base_style: Option<LitStr>,
 }
 
 impl Parse for ComponentArgs {
@@ -76,6 +81,7 @@ impl Parse for ComponentArgs {
         let mut props = Vec::new();
         let mut ext = Vec::new();
         let mut variants = Vec::new();
+        let mut base_style: Option<LitStr> = None;
 
         while !input.is_empty() {
             let name: Ident = input.parse()?;
@@ -92,8 +98,25 @@ impl Parse for ComponentArgs {
                     ext.extend(items.into_iter().map(|i| i.to_string()));
                 }
                 "variants" => {
-                    let items = Punctuated::<PropDecl, Token![,]>::parse_terminated(&content)?;
-                    variants.extend(items);
+                    // Optional leading base-style string literal.
+                    if content.peek(LitStr) {
+                        let lit: LitStr = content.parse()?;
+                        if base_style.is_some() {
+                            return Err(syn::Error::new_spanned(
+                                &lit,
+                                "duplicate base-style string in `variants(...)`; \
+                                 only one is allowed",
+                            ));
+                        }
+                        base_style = Some(lit);
+                        if !content.is_empty() {
+                            content.parse::<Token![,]>()?;
+                        }
+                    }
+                    if !content.is_empty() {
+                        let items = Punctuated::<PropDecl, Token![,]>::parse_terminated(&content)?;
+                        variants.extend(items);
+                    }
                 }
                 other => {
                     return Err(syn::Error::new_spanned(
@@ -116,6 +139,7 @@ impl Parse for ComponentArgs {
             props,
             ext,
             variants,
+            base_style,
         })
     }
 }
@@ -227,6 +251,7 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     // =====================================================================
 
     let args: ComponentArgs = syn::parse2(attr)?;
+    let base_style = args.base_style;
     let extension_names = args.ext;
     let attr_props = args.props;
     let variant_props = args.variants;
@@ -256,14 +281,29 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         ));
     }
 
+    // Base style lives in the same merge chain and therefore needs
+    // `ext(style)` too.
+    if base_style.is_some() && !extension_names.iter().any(|n| n == "style") {
+        return Err(syn::Error::new_spanned(
+            base_style.as_ref().unwrap(),
+            "`variants(\"...\")` base style requires `style` to also be listed \
+             in `ext(...)`, so the base can be folded into the render body's \
+             style. Add `style`, e.g. `ext(style, children)`.",
+        ));
+    }
+
     let variant_field_names: Vec<Ident> = variant_props.iter().map(|p| p.name.clone()).collect();
 
     // =====================================================================
     // 3. Extension bundle.
     // =====================================================================
 
-    let extensions_code =
-        extension::collect(&struct_ident, &extension_names, &variant_field_names)?;
+    let extensions_code = extension::collect(
+        &struct_ident,
+        &extension_names,
+        &variant_field_names,
+        base_style.as_ref(),
+    )?;
     let ext_field_defs = &extensions_code.field_defs;
     let ext_field_inits = &extensions_code.field_inits;
     let ext_local_bindings = &extensions_code.local_bindings;
@@ -614,6 +654,16 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
         )
     };
 
+    let base_style_section = match &base_style {
+        Some(lit) => format!(
+            "\n\n## Base style\n\n\
+             Applied at the bottom of the style merge chain — variants and \
+             user overrides win over it:\n\n```text\n{}\n```",
+            lit.value(),
+        ),
+        None => String::new(),
+    };
+
     let ext_section = if extension_names.is_empty() {
         "*No extensions.*".to_string()
     } else {
@@ -627,7 +677,8 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
     let struct_doc = format!(
         "Component generated from the function `{fn_name}`.\n\n\
          ## Props\n\n{props_section}\
-         {struct_fields_section}\n\n\
+         {struct_fields_section}\
+         {base_style_section}\n\n\
          ## Extensions\n\n{ext_section}",
         fn_name = fn_name_str,
     );
@@ -653,8 +704,9 @@ pub fn parse_component(attr: TokenStream2, item: TokenStream2) -> syn::Result<To
          Props are bound by reference as locals: required, defaulted, and \
          variant props as `&T`, optional props and struct fields as \
          `&Option<T>`. Extension fields are bound the same way. When the \
-         component declares `variants(...)`, the `style` local is the merge \
-         of every variant's resolved style plus the user's overrides."
+         component declares `variants(...)` (with or without a base style), \
+         the `style` local is the merge of the base style, every variant's \
+         resolved style, and the user's overrides."
     );
 
     let macro_doc = format!(

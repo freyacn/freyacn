@@ -613,7 +613,7 @@ fn long_list_section() -> impl IntoElement {
 // ==============================================================
 
 fn app() -> impl IntoElement {
-    use_init_cn_theme(Theme::dark().neutral().theme_color("neutral"));
+    use_init_cn_theme(Theme::light().neutral().theme_color("neutral"));
 
     Div()
         .style("flex flex-col w-full h-screen bg-background overflow-scroll text-foreground")

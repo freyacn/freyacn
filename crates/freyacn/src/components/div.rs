@@ -2,8 +2,34 @@
 //!
 //! Renders a Freya `rect()` after folding the `ext`-provided [`Style`]
 //! into concrete values. Handles scrolling, interaction state,
-//! animations, accessibility forwarding, per-side borders, and
-//! propagates its active state to descendants via `DivActiveState`.
+//! animations, accessibility forwarding, per-side borders, grid layout,
+//! and propagates its active state to descendants via `DivActiveState`.
+//!
+//! ## Grid
+//!
+//! `Div` acts as both a grid **container** and a grid **item**:
+//!
+//! - `Div().style("grid-cols-3")` — the container. Provides
+//!   `DivGridColsCtx(Some(3))` to direct children and switches to
+//!   `Content::Wrap + Direction::Horizontal + spacing` (the flex-wrap
+//!   approximation of CSS Grid; the torin layout engine has no native
+//!   grid primitive).
+//! - `Div().style("col-span-2")` inside the above — the item. Reads
+//!   `DivGridColsCtx` from the nearest `Div` ancestor and sizes itself
+//!   to `(100 / cols) * span %`. `col_span` defaults to 1 when unset.
+//!
+//! **Constraints:**
+//!
+//! - **Grid children must be `Div`s.** A `Label`, `Icon`, or raw `rect`
+//!   inside a grid has no grid awareness and gets `Size::auto()`. Wrap
+//!   them: `Div().col_span(1).child(label())`. Same constraint the
+//!   standalone `Grid`/`GridItem` components have.
+//! - **`space_x` / `space_y` are ignored in grid mode.** Grid spacing
+//!   comes from `gap-*` (`Style::spacing`), which is already applied.
+//! - **`grid_rows` / `row_span` are stored but not applied.** torin has
+//!   no row-track primitive; same limitation as `Grid`/`GridItem`.
+//! - **Only direct children are items.** A `Div` between the grid and a
+//!   grandchild shadows the context (`Some(None)`), matching CSS.
 //!
 //! ## Hover tracking
 //!
@@ -48,8 +74,13 @@
 //! (`-space-x-2`) produce overlap. `gap-*` (via `Style::spacing`) is
 //! applied independently on the parent, so `gap-2 space-x-1` produces
 //! both a 8px gap and a 4px left margin on non-first children.
+//!
+//! In **grid mode** (`grid_cols` set), `space_x` / `space_y` are not
+//! applied — use `gap-*` for grid spacing.
 
-use crate::extensions::{AnimationName, DivActiveState, DivPosition, GroupState, TextEllipsis};
+use crate::extensions::{
+    AnimationName, DivActiveState, DivGridColsCtx, DivPosition, GroupState, TextEllipsis,
+};
 use crate::prelude::*;
 use freya::animation::{AnimNum, OnCreation, OnFinish, use_animation};
 
@@ -125,6 +156,7 @@ pub fn Div() {
     let group_state: Option<GroupState> = try_consume_context();
     let position: Option<DivPosition> = try_consume_context();
     let parent_state: Option<DivActiveState> = try_consume_context();
+    let parent_grid: Option<DivGridColsCtx> = try_consume_context();
 
     let state = use_cn_theme();
     let mut active = StateFlags::NONE;
@@ -183,6 +215,36 @@ pub fn Div() {
         *flags_state.write() = active;
     }
     use_provide_context(move || DivActiveState { flags: flags_state });
+
+    // ── Grid context ──────────────────────────────────────────
+    //
+    // Every `Div` provides `DivGridColsCtx`, even when it has no
+    // `grid_cols`. The `Some(None)` value *shadows* an ancestor grid
+    // so grandchildren don't treat themselves as grid items — only
+    // direct children of a `Div` with `grid_cols(n)` are items.
+    let own_grid_cols = style.grid_cols;
+    let mut grid_cols_state = use_state::<Option<u32>>(|| None);
+    if *grid_cols_state.peek() != own_grid_cols {
+        *grid_cols_state.write() = own_grid_cols;
+    }
+    use_provide_context(move || DivGridColsCtx {
+        cols: grid_cols_state,
+    });
+
+    // ── Grid item width ───────────────────────────────────────
+    //
+    // If we're a direct child of a grid container, compute our width
+    // from `col_span` (default 1) and the parent's column count. A
+    // user-supplied `width` still wins — same as CSS, where an
+    // explicit `width` overrides `grid-template-columns`.
+    let grid_item_width: Option<Size> = parent_grid.and_then(|parent| {
+        let cols_opt = *parent.cols.peek();
+        cols_opt.map(|cols| {
+            let cols = cols.max(1);
+            let span = style.col_span.unwrap_or(1).max(1).min(cols);
+            Size::percent((100.0 / cols as f32) * span as f32)
+        })
+    });
 
     let style = style.clone().with_active_states(active);
 
@@ -251,9 +313,6 @@ pub fn Div() {
     let total = children.len();
     let grid_cols = style.grid_cols;
 
-    // NEW: pull `space_x` / `space_y` out of `Style` once so every
-    // child-iteration branch can pass them to `WithPosition`.
-    // `gap-*` (via `Style::spacing` above) is independent — both apply.
     let space_x_val = style.space_x.unwrap_or(0.0);
     let space_y_val = style.space_y.unwrap_or(0.0);
 
@@ -367,25 +426,32 @@ pub fn Div() {
         }
 
         visual = visual.child(content);
-    } else if let Some(cols) = grid_cols {
+    } else if let Some(_cols) = grid_cols {
+        // ── Grid container ────────────────────────────────────
+        //
+        // `Content::Wrap + Direction::Horizontal + spacing` is the
+        // flex-wrap approximation of CSS Grid. Children render
+        // *directly* — no fixed-width `rect()` wrapper — so each
+        // `Div` item can size itself from `col_span` via the
+        // `DivGridColsCtx` we provided above.
+        //
+        // `WithPosition` still wraps each child (for `first:` /
+        // `last:` / `DivPosition` context) but with `bare(true)` so
+        // it doesn't add a width-bearing rect around the item.
+        //
+        // `space_x` / `space_y` are intentionally not applied in grid
+        // mode — use `gap-*` for grid spacing instead.
         visual = visual
             .content(Content::Wrap { wrap_spacing: None })
             .direction(Direction::Horizontal);
-        let cell_pct = grid_cell_pct(cols);
         for (i, child) in children.iter().enumerate() {
             visual = visual.child(
-                rect()
-                    .width(Size::percent(cell_pct))
-                    .content(Content::Fit)
-                    .child(
-                        WithPosition()
-                            .index(i)
-                            .total(total)
-                            .space_x(space_x_val)
-                            .space_y(space_y_val)
-                            .child(child.clone())
-                            .into_element(),
-                    ),
+                WithPosition()
+                    .index(i)
+                    .total(total)
+                    .bare(true)
+                    .child(child.clone())
+                    .into_element(),
             );
         }
     } else {
@@ -427,6 +493,14 @@ pub fn Div() {
 
     if !is_scroll && !needs_cross_wrap {
         visual = apply_size_to_rect(&style, visual);
+    }
+
+    // Grid item width applied after the style-driven sizing so the
+    // user's explicit `width` wins over the span-computed width.
+    if style.width.is_none() {
+        if let Some(w) = grid_item_width {
+            visual = visual.width(w);
+        }
     }
 
     if let Some(c) = style.text_color {
@@ -560,13 +634,6 @@ pub fn Div() {
         let mut p_leave = pressed;
 
         visual = visual
-            // `enter` / `leave` are the non-bubbling DOM events, so they
-            // fire exactly once per boundary crossing. `over` / `out`
-            // bubble from children: `out` fires on the button when the
-            // pointer moves *onto* its label, which would clear hover
-            // even though the pointer is still inside the button's
-            // subtree. `enter` / `leave` only fire at the true boundary,
-            // matching CSS `:hover`.
             .on_pointer_enter(move |e: Event<PointerEventData>| {
                 *h_enter.write() = HOVERED;
                 if let Some(handler) = &on_hover {
@@ -713,6 +780,7 @@ impl DivComponent {
         total: usize = 0,
         space_x: f32 = 0.0,
         space_y: f32 = 0.0,
+        bare: bool = false,
     ),
     ext(children),
 )]
@@ -722,18 +790,25 @@ fn WithPosition() -> impl IntoElement {
     let tot = *total;
     let sx = *space_x;
     let sy = *space_y;
+    let bare = *bare;
 
     use_provide_context(move || DivPosition {
         index: idx,
         total: tot,
     });
 
+    // `bare` mode: the child is the layout element — no `rect()` wrapper.
+    // Used by grid containers so `Div` items can self-size via
+    // `DivGridColsCtx` without a fixed-width parent rect overriding them.
+    if bare {
+        if let Some(first) = children.first() {
+            return first.clone();
+        }
+        return rect().into_element();
+    }
+
     let mut r = rect();
 
-    // `space-x-*` / `space-y-*` semantics: apply margin-left /
-    // margin-top to every child except the first. Negative values
-    // (from `-space-x-*`) produce overlap. `0.0` on both axes is a
-    // no-op, so the common "no spacing utility" case is unaffected.
     if idx > 0 && (sx != 0.0 || sy != 0.0) {
         r = r.margin(Gaps::new(sy, 0.0, 0.0, sx));
     }
@@ -741,5 +816,5 @@ fn WithPosition() -> impl IntoElement {
     for child in children.iter() {
         r = r.child(child.clone());
     }
-    r
+    r.into_element()
 }

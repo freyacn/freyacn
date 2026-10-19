@@ -233,6 +233,16 @@ pub fn Label() {
     for shadow in &style.text_shadows {
         lbl = lbl.text_shadow(shadow.clone());
     }
+    if let Some(height) = style.text_height {
+        lbl = lbl.text_height(height);
+    }
+    // NEW: tracking / letter-spacing
+    if let Some(spacing) = style.letter_spacing {
+        lbl = lbl.letter_spacing(spacing);
+    }
+    for family in &style.font_families {
+        lbl = lbl.font_family(family.clone());
+    }
 
     let max_lines: Option<usize> = style
         .line_clamp

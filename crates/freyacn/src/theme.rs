@@ -1,77 +1,43 @@
 //! # FreyaCN Theme System
 //!
-//! This module provides a complete theming system inspired by shadcn/ui and built for Freya.
-//! It includes a full Tailwind‑style color palette, semantic theme fields, and hooks to
-//! consume and provide the theme in your components.
+//! Aligned with **shadcn/ui v4** (`globals.css`, neutral base).
 //!
-//! ## Overview
+//! ## Token values
 //!
-//! The theme is composed of two main parts:
-//! - **`Colors`**: a palette of 10 shades (50–950) for each of the common Tailwind color families
-//!   (slate, gray, zinc, neutral, red, orange, amber, yellow, lime, green, emerald, teal, cyan,
-//!   sky, blue, indigo, violet, purple, fuchsia, pink, rose, plus stone, mauve, olive, mist, taupe).
-//! - **`Theme`**: a semantic collection of colors used by your UI components (background, foreground,
-//!   primary, secondary, accent, destructive, border, etc.). It also stores the full `Colors` palette
-//!   and a `is_dark` flag.
+//! Every semantic token in the `neutral` base resolves to the exact
+//! shadcn OKLCH value converted to sRGB. Other bases (`slate`, `stone`,
+//! `zinc`, …) derive their surfaces from the Tailwind palette using the
+//! same *structure* — `background < card < popover = muted = secondary
+//! < accent` in dark, inverted in light.
 //!
-//! You can build a theme by choosing a **base palette** (the neutral shades used for backgrounds,
-//! borders, and other structural elements) and a **theme palette** (the accent colour used for
-//! primary actions, links, and interactive elements).
+//! | Token | Light | Dark |
+//! |---|---|---|
+//! | `background` | `#ffffff` | `rgb(10,10,10)` |
+//! | `foreground` | `rgb(10,10,10)` | `rgb(250,250,250)` |
+//! | `card` | `#ffffff` | `rgb(23,23,23)` |
+//! | `popover` | `#ffffff` | `rgb(38,38,38)` |
+//! | `primary` | `rgb(23,23,23)` | `rgb(229,229,229)` |
+//! | `secondary` | `rgb(245,245,245)` | `rgb(38,38,38)` |
+//! | `muted` | `rgb(245,245,245)` | `rgb(38,38,38)` |
+//! | `muted-foreground` | `rgb(115,115,115)` | `rgb(161,161,161)` |
+//! | `accent` | `rgb(245,245,245)` | `rgb(64,64,64)` |
+//! | `destructive` | `rgb(231,0,11)` | `rgb(255,100,103)` |
+//! | `border` | `rgb(229,229,229)` | `white / 10%` |
+//! | `input` | `rgb(229,229,229)` | `white / 15%` |
+//! | `ring` | `rgb(161,161,161)` | `rgb(115,115,115)` |
 //!
-//! ## Usage
+//! ## Radius
 //!
-//! ### Setting the root theme
-//! In your application’s root component, call `use_init_cn_theme` with the theme you want.
-//!
-//! ```no_run
-//! # use freyacn::prelude::*;
-//! fn App() -> impl IntoElement {
-//!     // Create a light theme with a slate base and blue accent.
-//!     let theme = Theme::light().base_color("slate").theme_color("blue");
-//!     use_init_cn_theme(theme);
-//!
-//!     // Your UI…
-//!     rect()
-//!         .expanded()
-//!         .background(theme.background)   // use the theme directly
-//!         .child("Hello, world!")
-//! }
-//! ```
-//!
-//! ### Using the theme in a component
-//! Inside any component, call `use_cn_theme()` to retrieve the current theme.
-//!
-//! ```no_run
-//! # use freyacn::prelude::*;
-//! fn MyButton() -> impl IntoElement {
-//!     let theme = use_cn_theme();
-//!     rect()
-//!         .background(theme.read().primary)
-//!         .color(theme.read().primary_foreground)
-//!         .child("Click me")
-//! }
-//! ```
-//!
-//! ### Overriding the theme for a subtree
-//! Use `use_provide_cn_theme` to supply a different theme to a specific branch of your UI.
-//!
-//! ```no_run
-//! # use freyacn::prelude::*;
-//! fn DarkPanel() -> impl IntoElement {
-//!     let dark_theme = Theme::dark().base_color("zinc").theme_color("rose");
-//!     use_provide_cn_theme(dark_theme);
-//!     // All children here will see the dark theme.
-//!     rect()
-//!         .expanded()
-//!         .background(dark_theme.background)
-//!         .child("Dark panel")
-//! }
-//! ```
+//! shadcn uses a single `--radius: 0.625rem` (10px) with derived steps:
+//! `sm = 6px`, `md = 8px`, `lg = 10px`, `xl = 14px`. `Theme::radius_lg`
+//! is what `rounded-lg` maps to in shadcn — components that want an
+//! exact shadcn corner should read it rather than hard-coding `8.0`.
 
 use freya::prelude::*;
 use freya::prelude::{
     Readable, State, provide_context, try_consume_context, use_consume, use_hook,
 };
+use paste::paste;
 
 /// Convert an RGB tuple into a Freya Color.
 const fn rgb(r: u8, g: u8, b: u8) -> Color {
@@ -79,34 +45,99 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color {
 }
 
 // ------------------------------------------------------------------------
+// Shadcn-exact tokens
+// ------------------------------------------------------------------------
+
+/// Exact shadcn/ui v4 token colours, converted from the OKLCH values in
+/// `globals.css` to sRGB. Only the `neutral` base uses these; other
+/// bases derive from the Tailwind palette.
+mod shadcn {
+    use super::{Color, rgb};
+
+    // ---- Light (`.root`) ----
+    pub const LIGHT_BACKGROUND: Color = rgb(255, 255, 255);
+    pub const LIGHT_FOREGROUND: Color = rgb(10, 10, 10);
+    pub const LIGHT_CARD: Color = rgb(255, 255, 255);
+    pub const LIGHT_CARD_FOREGROUND: Color = rgb(10, 10, 10);
+    pub const LIGHT_POPOVER: Color = rgb(255, 255, 255);
+    pub const LIGHT_POPOVER_FOREGROUND: Color = rgb(10, 10, 10);
+    pub const LIGHT_PRIMARY: Color = rgb(23, 23, 23);
+    pub const LIGHT_PRIMARY_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const LIGHT_SECONDARY: Color = rgb(245, 245, 245);
+    pub const LIGHT_SECONDARY_FOREGROUND: Color = rgb(23, 23, 23);
+    pub const LIGHT_MUTED: Color = rgb(245, 245, 245);
+    pub const LIGHT_MUTED_FOREGROUND: Color = rgb(115, 115, 115);
+    pub const LIGHT_ACCENT: Color = rgb(245, 245, 245);
+    pub const LIGHT_ACCENT_FOREGROUND: Color = rgb(23, 23, 23);
+    pub const LIGHT_DESTRUCTIVE: Color = rgb(231, 0, 11);
+    pub const LIGHT_BORDER: Color = rgb(229, 229, 229);
+    pub const LIGHT_INPUT: Color = rgb(229, 229, 229);
+    pub const LIGHT_RING: Color = rgb(161, 161, 161);
+    pub const LIGHT_SIDEBAR: Color = rgb(250, 250, 250);
+    pub const LIGHT_SIDEBAR_FOREGROUND: Color = rgb(10, 10, 10);
+    pub const LIGHT_SIDEBAR_PRIMARY: Color = rgb(23, 23, 23);
+    pub const LIGHT_SIDEBAR_PRIMARY_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const LIGHT_SIDEBAR_ACCENT: Color = rgb(245, 245, 245);
+    pub const LIGHT_SIDEBAR_ACCENT_FOREGROUND: Color = rgb(23, 23, 23);
+    pub const LIGHT_SIDEBAR_BORDER: Color = rgb(229, 229, 229);
+    pub const LIGHT_SIDEBAR_RING: Color = rgb(161, 161, 161);
+
+    pub const LIGHT_CHART_1: Color = rgb(245, 74, 0);
+    pub const LIGHT_CHART_2: Color = rgb(0, 150, 137);
+    pub const LIGHT_CHART_3: Color = rgb(16, 78, 100);
+    pub const LIGHT_CHART_4: Color = rgb(255, 185, 0);
+    pub const LIGHT_CHART_5: Color = rgb(254, 153, 0);
+
+    // ---- Dark (`.dark`) ----
+    pub const DARK_BACKGROUND: Color = rgb(10, 10, 10);
+    pub const DARK_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_CARD: Color = rgb(23, 23, 23);
+    pub const DARK_CARD_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_POPOVER: Color = rgb(38, 38, 38);
+    pub const DARK_POPOVER_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_PRIMARY: Color = rgb(229, 229, 229);
+    pub const DARK_PRIMARY_FOREGROUND: Color = rgb(23, 23, 23);
+    pub const DARK_SECONDARY: Color = rgb(38, 38, 38);
+    pub const DARK_SECONDARY_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_MUTED: Color = rgb(38, 38, 38);
+    pub const DARK_MUTED_FOREGROUND: Color = rgb(161, 161, 161);
+    pub const DARK_ACCENT: Color = rgb(64, 64, 64);
+    pub const DARK_ACCENT_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_DESTRUCTIVE: Color = rgb(255, 100, 103);
+
+    /// `oklch(1 0 0 / 10%)` — white at 10% alpha.
+    pub const DARK_BORDER: Color = Color::from_argb(26, 255, 255, 255);
+    /// `oklch(1 0 0 / 15%)` — white at 15% alpha.
+    pub const DARK_INPUT: Color = Color::from_argb(38, 255, 255, 255);
+
+    pub const DARK_RING: Color = rgb(115, 115, 115);
+
+    pub const DARK_SIDEBAR: Color = rgb(23, 23, 23);
+    pub const DARK_SIDEBAR_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_SIDEBAR_PRIMARY: Color = rgb(20, 71, 230);
+    pub const DARK_SIDEBAR_PRIMARY_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_SIDEBAR_ACCENT: Color = rgb(38, 38, 38);
+    pub const DARK_SIDEBAR_ACCENT_FOREGROUND: Color = rgb(250, 250, 250);
+    pub const DARK_SIDEBAR_BORDER: Color = Color::from_argb(26, 255, 255, 255);
+    pub const DARK_SIDEBAR_RING: Color = rgb(82, 82, 82);
+
+    pub const DARK_CHART_1: Color = rgb(20, 71, 230);
+    pub const DARK_CHART_2: Color = rgb(0, 188, 125);
+    pub const DARK_CHART_3: Color = rgb(254, 153, 0);
+    pub const DARK_CHART_4: Color = rgb(173, 70, 255);
+    pub const DARK_CHART_5: Color = rgb(255, 31, 86);
+}
+
+// ------------------------------------------------------------------------
 // Color palette
 // ------------------------------------------------------------------------
 
 /// Complete FreyaCN color palette (Tailwind/shadcn style).
-///
-/// This struct contains all the colours from the Tailwind‑style palettes used by shadcn/ui.
-/// It includes 10 shades (50, 100, 200, …, 900, 950) for each of the following families:
-///
-/// - **Neutrals**: `slate`, `gray`, `zinc`, `neutral`, `stone`, `mauve`, `olive`, `mist`, `taupe`
-/// - **Accents**: `red`, `orange`, `amber`, `yellow`, `lime`, `green`, `emerald`, `teal`, `cyan`,
-///   `sky`, `blue`, `indigo`, `violet`, `purple`, `fuchsia`, `pink`, `rose`
-///
-/// Plus the basic `white` and `black`.
-///
-/// # Example
-/// ```
-/// use freyacn::theme::Colors;
-/// let colors = Colors::new();
-/// let slate_500 = colors.slate_500;   // tailwind slate-500
-/// let blue_400 = colors.blue_400;     // tailwind blue-400
-/// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Colors {
-    // basic
     pub white: Color,
     pub black: Color,
 
-    // Stone
     pub stone_50: Color,
     pub stone_100: Color,
     pub stone_200: Color,
@@ -119,7 +150,6 @@ pub struct Colors {
     pub stone_900: Color,
     pub stone_950: Color,
 
-    // Mauve
     pub mauve_50: Color,
     pub mauve_100: Color,
     pub mauve_200: Color,
@@ -132,7 +162,6 @@ pub struct Colors {
     pub mauve_900: Color,
     pub mauve_950: Color,
 
-    // Olive
     pub olive_50: Color,
     pub olive_100: Color,
     pub olive_200: Color,
@@ -145,7 +174,6 @@ pub struct Colors {
     pub olive_900: Color,
     pub olive_950: Color,
 
-    // Mist
     pub mist_50: Color,
     pub mist_100: Color,
     pub mist_200: Color,
@@ -158,7 +186,6 @@ pub struct Colors {
     pub mist_900: Color,
     pub mist_950: Color,
 
-    // Taupe
     pub taupe_50: Color,
     pub taupe_100: Color,
     pub taupe_200: Color,
@@ -171,7 +198,6 @@ pub struct Colors {
     pub taupe_900: Color,
     pub taupe_950: Color,
 
-    // Slate
     pub slate_50: Color,
     pub slate_100: Color,
     pub slate_200: Color,
@@ -184,7 +210,6 @@ pub struct Colors {
     pub slate_900: Color,
     pub slate_950: Color,
 
-    // Gray
     pub gray_50: Color,
     pub gray_100: Color,
     pub gray_200: Color,
@@ -197,7 +222,6 @@ pub struct Colors {
     pub gray_900: Color,
     pub gray_950: Color,
 
-    // Zinc
     pub zinc_50: Color,
     pub zinc_100: Color,
     pub zinc_200: Color,
@@ -210,7 +234,6 @@ pub struct Colors {
     pub zinc_900: Color,
     pub zinc_950: Color,
 
-    // Neutral
     pub neutral_50: Color,
     pub neutral_100: Color,
     pub neutral_200: Color,
@@ -223,7 +246,6 @@ pub struct Colors {
     pub neutral_900: Color,
     pub neutral_950: Color,
 
-    // Red
     pub red_50: Color,
     pub red_100: Color,
     pub red_200: Color,
@@ -236,7 +258,6 @@ pub struct Colors {
     pub red_900: Color,
     pub red_950: Color,
 
-    // Orange
     pub orange_50: Color,
     pub orange_100: Color,
     pub orange_200: Color,
@@ -249,7 +270,6 @@ pub struct Colors {
     pub orange_900: Color,
     pub orange_950: Color,
 
-    // Amber
     pub amber_50: Color,
     pub amber_100: Color,
     pub amber_200: Color,
@@ -262,7 +282,6 @@ pub struct Colors {
     pub amber_900: Color,
     pub amber_950: Color,
 
-    // Yellow
     pub yellow_50: Color,
     pub yellow_100: Color,
     pub yellow_200: Color,
@@ -275,7 +294,6 @@ pub struct Colors {
     pub yellow_900: Color,
     pub yellow_950: Color,
 
-    // Lime
     pub lime_50: Color,
     pub lime_100: Color,
     pub lime_200: Color,
@@ -288,7 +306,6 @@ pub struct Colors {
     pub lime_900: Color,
     pub lime_950: Color,
 
-    // Green
     pub green_50: Color,
     pub green_100: Color,
     pub green_200: Color,
@@ -301,7 +318,6 @@ pub struct Colors {
     pub green_900: Color,
     pub green_950: Color,
 
-    // Emerald
     pub emerald_50: Color,
     pub emerald_100: Color,
     pub emerald_200: Color,
@@ -314,7 +330,6 @@ pub struct Colors {
     pub emerald_900: Color,
     pub emerald_950: Color,
 
-    // Teal
     pub teal_50: Color,
     pub teal_100: Color,
     pub teal_200: Color,
@@ -327,7 +342,6 @@ pub struct Colors {
     pub teal_900: Color,
     pub teal_950: Color,
 
-    // Cyan
     pub cyan_50: Color,
     pub cyan_100: Color,
     pub cyan_200: Color,
@@ -340,7 +354,6 @@ pub struct Colors {
     pub cyan_900: Color,
     pub cyan_950: Color,
 
-    // Sky
     pub sky_50: Color,
     pub sky_100: Color,
     pub sky_200: Color,
@@ -353,7 +366,6 @@ pub struct Colors {
     pub sky_900: Color,
     pub sky_950: Color,
 
-    // Blue
     pub blue_50: Color,
     pub blue_100: Color,
     pub blue_200: Color,
@@ -366,7 +378,6 @@ pub struct Colors {
     pub blue_900: Color,
     pub blue_950: Color,
 
-    // Indigo
     pub indigo_50: Color,
     pub indigo_100: Color,
     pub indigo_200: Color,
@@ -379,7 +390,6 @@ pub struct Colors {
     pub indigo_900: Color,
     pub indigo_950: Color,
 
-    // Violet
     pub violet_50: Color,
     pub violet_100: Color,
     pub violet_200: Color,
@@ -392,7 +402,6 @@ pub struct Colors {
     pub violet_900: Color,
     pub violet_950: Color,
 
-    // Purple
     pub purple_50: Color,
     pub purple_100: Color,
     pub purple_200: Color,
@@ -405,7 +414,6 @@ pub struct Colors {
     pub purple_900: Color,
     pub purple_950: Color,
 
-    // Fuchsia
     pub fuchsia_50: Color,
     pub fuchsia_100: Color,
     pub fuchsia_200: Color,
@@ -418,7 +426,6 @@ pub struct Colors {
     pub fuchsia_900: Color,
     pub fuchsia_950: Color,
 
-    // Pink
     pub pink_50: Color,
     pub pink_100: Color,
     pub pink_200: Color,
@@ -431,7 +438,6 @@ pub struct Colors {
     pub pink_900: Color,
     pub pink_950: Color,
 
-    // Rose
     pub rose_50: Color,
     pub rose_100: Color,
     pub rose_200: Color,
@@ -446,14 +452,12 @@ pub struct Colors {
 }
 
 impl Colors {
-    /// Creates a new colour palette with all the default Tailwind‑style colours.
+    /// Creates a new colour palette with all the default Tailwind-style colours.
     pub fn new() -> Self {
         Self {
-            // basic
             white: rgb(255, 255, 255),
             black: rgb(0, 0, 0),
 
-            // Stone
             stone_50: rgb(250, 250, 249),
             stone_100: rgb(245, 245, 244),
             stone_200: rgb(231, 229, 228),
@@ -466,7 +470,6 @@ impl Colors {
             stone_900: rgb(28, 25, 23),
             stone_950: rgb(12, 10, 9),
 
-            // Mauve
             mauve_50: rgb(250, 250, 250),
             mauve_100: rgb(243, 241, 243),
             mauve_200: rgb(231, 228, 231),
@@ -479,7 +482,6 @@ impl Colors {
             mauve_900: rgb(29, 22, 30),
             mauve_950: rgb(12, 9, 12),
 
-            // Olive
             olive_50: rgb(251, 251, 249),
             olive_100: rgb(244, 244, 240),
             olive_200: rgb(232, 232, 227),
@@ -492,7 +494,6 @@ impl Colors {
             olive_900: rgb(29, 29, 22),
             olive_950: rgb(12, 12, 9),
 
-            // Mist
             mist_50: rgb(249, 251, 251),
             mist_100: rgb(241, 243, 243),
             mist_200: rgb(227, 231, 232),
@@ -505,7 +506,6 @@ impl Colors {
             mist_900: rgb(22, 27, 29),
             mist_950: rgb(9, 11, 12),
 
-            // Taupe
             taupe_50: rgb(251, 250, 249),
             taupe_100: rgb(243, 241, 241),
             taupe_200: rgb(232, 228, 227),
@@ -518,7 +518,6 @@ impl Colors {
             taupe_900: rgb(29, 24, 22),
             taupe_950: rgb(12, 10, 9),
 
-            // Slate
             slate_50: rgb(248, 250, 252),
             slate_100: rgb(241, 245, 249),
             slate_200: rgb(226, 232, 240),
@@ -531,7 +530,6 @@ impl Colors {
             slate_900: rgb(15, 23, 42),
             slate_950: rgb(2, 6, 23),
 
-            // Gray
             gray_50: rgb(249, 250, 251),
             gray_100: rgb(243, 244, 246),
             gray_200: rgb(229, 231, 235),
@@ -544,7 +542,6 @@ impl Colors {
             gray_900: rgb(17, 24, 39),
             gray_950: rgb(3, 7, 18),
 
-            // Zinc
             zinc_50: rgb(250, 250, 250),
             zinc_100: rgb(244, 244, 245),
             zinc_200: rgb(228, 228, 231),
@@ -557,7 +554,6 @@ impl Colors {
             zinc_900: rgb(24, 24, 27),
             zinc_950: rgb(9, 9, 11),
 
-            // Neutral
             neutral_50: rgb(250, 250, 250),
             neutral_100: rgb(245, 245, 245),
             neutral_200: rgb(229, 229, 229),
@@ -570,7 +566,6 @@ impl Colors {
             neutral_900: rgb(23, 23, 23),
             neutral_950: rgb(10, 10, 10),
 
-            // Red
             red_50: rgb(254, 242, 242),
             red_100: rgb(254, 226, 226),
             red_200: rgb(254, 202, 202),
@@ -583,7 +578,6 @@ impl Colors {
             red_900: rgb(127, 29, 29),
             red_950: rgb(69, 10, 10),
 
-            // Orange
             orange_50: rgb(255, 247, 237),
             orange_100: rgb(255, 237, 213),
             orange_200: rgb(254, 215, 170),
@@ -596,7 +590,6 @@ impl Colors {
             orange_900: rgb(124, 45, 18),
             orange_950: rgb(67, 20, 7),
 
-            // Amber
             amber_50: rgb(255, 251, 235),
             amber_100: rgb(254, 243, 199),
             amber_200: rgb(253, 230, 138),
@@ -609,7 +602,6 @@ impl Colors {
             amber_900: rgb(120, 53, 15),
             amber_950: rgb(69, 26, 3),
 
-            // Yellow
             yellow_50: rgb(254, 252, 232),
             yellow_100: rgb(254, 249, 195),
             yellow_200: rgb(254, 240, 138),
@@ -622,7 +614,6 @@ impl Colors {
             yellow_900: rgb(113, 63, 18),
             yellow_950: rgb(66, 32, 6),
 
-            // Lime
             lime_50: rgb(247, 254, 231),
             lime_100: rgb(236, 252, 203),
             lime_200: rgb(217, 249, 157),
@@ -635,7 +626,6 @@ impl Colors {
             lime_900: rgb(54, 83, 20),
             lime_950: rgb(26, 46, 5),
 
-            // Green
             green_50: rgb(240, 253, 244),
             green_100: rgb(220, 252, 231),
             green_200: rgb(187, 247, 208),
@@ -648,7 +638,6 @@ impl Colors {
             green_900: rgb(20, 83, 45),
             green_950: rgb(5, 46, 22),
 
-            // Emerald
             emerald_50: rgb(236, 253, 245),
             emerald_100: rgb(209, 250, 229),
             emerald_200: rgb(167, 243, 208),
@@ -661,7 +650,6 @@ impl Colors {
             emerald_900: rgb(6, 78, 59),
             emerald_950: rgb(2, 44, 34),
 
-            // Teal
             teal_50: rgb(240, 253, 250),
             teal_100: rgb(204, 251, 241),
             teal_200: rgb(153, 246, 228),
@@ -674,7 +662,6 @@ impl Colors {
             teal_900: rgb(19, 78, 74),
             teal_950: rgb(4, 47, 46),
 
-            // Cyan
             cyan_50: rgb(236, 254, 255),
             cyan_100: rgb(207, 250, 254),
             cyan_200: rgb(165, 243, 252),
@@ -687,7 +674,6 @@ impl Colors {
             cyan_900: rgb(22, 78, 99),
             cyan_950: rgb(8, 51, 68),
 
-            // Sky
             sky_50: rgb(240, 249, 255),
             sky_100: rgb(224, 242, 254),
             sky_200: rgb(186, 230, 253),
@@ -700,7 +686,6 @@ impl Colors {
             sky_900: rgb(12, 74, 110),
             sky_950: rgb(8, 47, 73),
 
-            // Blue
             blue_50: rgb(239, 246, 255),
             blue_100: rgb(219, 234, 254),
             blue_200: rgb(191, 219, 254),
@@ -713,7 +698,6 @@ impl Colors {
             blue_900: rgb(30, 58, 138),
             blue_950: rgb(23, 37, 84),
 
-            // Indigo
             indigo_50: rgb(238, 242, 255),
             indigo_100: rgb(224, 231, 255),
             indigo_200: rgb(199, 210, 254),
@@ -726,7 +710,6 @@ impl Colors {
             indigo_900: rgb(49, 46, 129),
             indigo_950: rgb(30, 27, 75),
 
-            // Violet
             violet_50: rgb(245, 243, 255),
             violet_100: rgb(237, 233, 254),
             violet_200: rgb(221, 214, 254),
@@ -739,7 +722,6 @@ impl Colors {
             violet_900: rgb(76, 29, 149),
             violet_950: rgb(46, 16, 101),
 
-            // Purple
             purple_50: rgb(250, 245, 255),
             purple_100: rgb(243, 232, 255),
             purple_200: rgb(233, 213, 255),
@@ -752,7 +734,6 @@ impl Colors {
             purple_900: rgb(88, 28, 135),
             purple_950: rgb(59, 7, 100),
 
-            // Fuchsia
             fuchsia_50: rgb(253, 244, 255),
             fuchsia_100: rgb(250, 232, 255),
             fuchsia_200: rgb(245, 208, 254),
@@ -765,7 +746,6 @@ impl Colors {
             fuchsia_900: rgb(112, 26, 117),
             fuchsia_950: rgb(74, 4, 78),
 
-            // Pink
             pink_50: rgb(253, 242, 248),
             pink_100: rgb(252, 231, 243),
             pink_200: rgb(251, 207, 232),
@@ -778,7 +758,6 @@ impl Colors {
             pink_900: rgb(131, 24, 67),
             pink_950: rgb(80, 7, 36),
 
-            // Rose
             rose_50: rgb(255, 241, 242),
             rose_100: rgb(255, 228, 230),
             rose_200: rgb(254, 205, 211),
@@ -801,137 +780,144 @@ impl Default for Colors {
 }
 
 // ------------------------------------------------------------------------
+// Palette-derived surfaces
+// ------------------------------------------------------------------------
+
+/// Internal bundle of the surface tokens for a given base palette.
+struct SurfaceTokens {
+    bg: Color,
+    fg: Color,
+    card: Color,
+    popover: Color,
+    muted: Color,
+    muted_fg: Color,
+    secondary: Color,
+    secondary_fg: Color,
+    accent: Color,
+    accent_fg: Color,
+    border: Color,
+    input: Color,
+    ring: Color,
+    primary: Color,
+    primary_fg: Color,
+}
+
+/// Build shadcn-shaped surfaces from a Tailwind palette family.
+///
+/// Dark: `bg 950 → card 900 → popover/muted/secondary 800 → accent 700`,
+/// with `ring = 500` and `primary = 200`. Light: `bg 50 → muted/secondary/
+/// accent 100 → border 200`, with `card = white`, `ring = 400`, and
+/// `primary = 900`.
+macro_rules! surface_tokens {
+    ($c:expr, $family:ident, $dark:expr) => {{
+        let c = $c;
+        if $dark {
+            paste! {
+                SurfaceTokens {
+                    bg: c.[<$family _950>],
+                    fg: c.[<$family _50>],
+                    card: c.[<$family _900>],
+                    popover: c.[<$family _800>],
+                    muted: c.[<$family _800>],
+                    muted_fg: c.[<$family _400>],
+                    secondary: c.[<$family _800>],
+                    secondary_fg: c.[<$family _50>],
+                    accent: c.[<$family _700>],
+                    accent_fg: c.[<$family _50>],
+                    border: c.[<$family _800>],
+                    input: c.[<$family _800>],
+                    ring: c.[<$family _500>],
+                    primary: c.[<$family _200>],
+                    primary_fg: c.[<$family _900>],
+                }
+            }
+        } else {
+            paste! {
+                SurfaceTokens {
+                    bg: c.[<$family _50>],
+                    fg: c.[<$family _950>],
+                    card: c.white,
+                    popover: c.white,
+                    muted: c.[<$family _100>],
+                    muted_fg: c.[<$family _500>],
+                    secondary: c.[<$family _100>],
+                    secondary_fg: c.[<$family _900>],
+                    accent: c.[<$family _100>],
+                    accent_fg: c.[<$family _900>],
+                    border: c.[<$family _200>],
+                    input: c.[<$family _200>],
+                    ring: c.[<$family _400>],
+                    primary: c.[<$family _900>],
+                    primary_fg: c.[<$family _50>],
+                }
+            }
+        }
+    }};
+}
+
+// ------------------------------------------------------------------------
 // Semantic theme
 // ------------------------------------------------------------------------
 
-/// Semantic FreyaCN theme.
-///
-/// This is the central theme object used by your UI components. It is built from a
-/// `Colors` palette and defines the semantic colours for backgrounds, text, borders,
-/// interactive elements, and more.
-///
-/// All colour fields are public and intended to be read directly. The theme also carries
-/// a `is_dark` flag and the full palette (`colors`) for when you need to access specific
-/// shade values.
-///
-/// # Example
-/// ```
-/// # use freyacn::theme::Theme;
-/// let theme = Theme::light().base_color("slate").theme_color("blue");
-/// let background = theme.background;
-/// let primary = theme.primary;
-/// ```
+/// Semantic FreyaCN theme, aligned with shadcn/ui v4.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Theme {
-    /// Whether the theme is in dark mode.
     pub is_dark: bool,
-    /// The full colour palette.
     pub colors: Colors,
 
-    // ----- Core -----
-    /// Main background colour.
     pub background: Color,
-    /// Main foreground (text) colour.
     pub foreground: Color,
 
-    // ----- Primary -----
-    /// Primary accent colour (e.g., main call‑to‑action).
     pub primary: Color,
-    /// Foreground colour that contrasts with `primary`.
     pub primary_foreground: Color,
 
-    // ----- Secondary -----
-    /// Secondary background colour (less prominent than `primary`).
     pub secondary: Color,
-    /// Foreground colour that contrasts with `secondary`.
     pub secondary_foreground: Color,
 
-    // ----- Muted -----
-    /// Muted background (often used for subtle backgrounds or disabled states).
     pub muted: Color,
-    /// Foreground colour that contrasts with `muted`.
     pub muted_foreground: Color,
 
-    // ----- Accent -----
-    /// Accent colour (similar to `primary` but may be used for less prominent actions).
     pub accent: Color,
-    /// Foreground colour that contrasts with `accent`.
     pub accent_foreground: Color,
 
-    // ----- Destructive -----
-    /// Destructive colour (e.g., for delete or warning actions).
     pub destructive: Color,
-    /// Foreground colour that contrasts with `destructive`.
     pub destructive_foreground: Color,
 
-    // ----- Card / Popover -----
-    /// Background for card‑like surfaces.
     pub card: Color,
-    /// Foreground colour that contrasts with `card`.
     pub card_foreground: Color,
 
-    /// Background for popover surfaces.
     pub popover: Color,
-    /// Foreground colour that contrasts with `popover`.
     pub popover_foreground: Color,
 
-    // ----- Borders & Inputs -----
-    /// Border colour for general use.
     pub border: Color,
-    /// Border colour for input fields.
     pub input: Color,
-    /// Focus ring colour.
     pub ring: Color,
 
-    // ----- Charts -----
-    /// Primary chart colour.
     pub chart_1: Color,
-    /// Secondary chart colour.
     pub chart_2: Color,
-    /// Tertiary chart colour.
     pub chart_3: Color,
-    /// Quaternary chart colour.
     pub chart_4: Color,
-    /// Quinary chart colour.
     pub chart_5: Color,
 
-    // ----- Sidebar (shadcn v4) -----
-    /// Sidebar background.
     pub sidebar: Color,
-    /// Sidebar foreground (text).
     pub sidebar_foreground: Color,
-    /// Sidebar primary accent.
     pub sidebar_primary: Color,
-    /// Foreground that contrasts with `sidebar_primary`.
     pub sidebar_primary_foreground: Color,
-    /// Sidebar accent.
     pub sidebar_accent: Color,
-    /// Foreground that contrasts with `sidebar_accent`.
     pub sidebar_accent_foreground: Color,
-    /// Sidebar border colour.
     pub sidebar_border: Color,
-    /// Sidebar focus ring colour.
     pub sidebar_ring: Color,
 
-    // ----- State -----
-    /// Disabled background colour.
     pub disabled: Color,
-    /// Disabled foreground colour.
     pub disabled_foreground: Color,
 
-    // ----- Radius scale -----
-    /// `rounded-sm` radius in px.
     pub radius_sm: f32,
-    /// `rounded-md` radius in px.
     pub radius_md: f32,
-    /// `rounded-lg` radius in px.
     pub radius_lg: f32,
-    /// `rounded-xl` radius in px.
     pub radius_xl: f32,
 }
 
 impl Theme {
-    /// Helper to get the luminance of a color (0.0 – 1.0).
     fn luminance(color: Color) -> f32 {
         let r = color.r() as f32 / 255.0;
         let g = color.g() as f32 / 255.0;
@@ -939,424 +925,211 @@ impl Theme {
         0.299 * r + 0.587 * g + 0.114 * b
     }
 
-    // ------------------------------------------------------------------
-    // Fluent entry points
-    // ------------------------------------------------------------------
-
-    /// Start with a **light** theme: default `slate` base and `slate` accent.
-    ///
-    /// Chain `.base_color(...)` to change the neutral surfaces and
-    /// `.theme_color(...)` to pick the accent. Order matters:
-    /// `.base_color` resets the accent, so call it first.
-    ///
-    /// ```
-    /// # use freyacn::theme::Theme;
-    /// let theme = Theme::light().base_color("zinc").theme_color("blue");
-    /// assert_eq!(theme.is_dark, false);
-    /// ```
+    /// Start with a **light** theme using shadcn's default `neutral` base.
     pub fn light() -> Self {
-        Self::from_base("slate", false)
+        Self::from_base("neutral", false)
     }
 
-    /// Start with a **dark** theme: default `slate` base and `slate` accent.
-    ///
-    /// Chain `.base_color(...)` to change the neutral surfaces and
-    /// `.theme_color(...)` to pick the accent. Order matters:
-    /// `.base_color` resets the accent, so call it first.
-    ///
-    /// ```
-    /// # use freyacn::theme::Theme;
-    /// let theme = Theme::dark().base_color("zinc").theme_color("rose");
-    /// assert_eq!(theme.is_dark, true);
-    /// ```
+    /// Start with a **dark** theme using shadcn's default `neutral` base.
     pub fn dark() -> Self {
-        Self::from_base("slate", true)
+        Self::from_base("neutral", true)
     }
 
     /// Change the base palette, keeping the current light/dark mode.
-    ///
-    /// Resets `primary` / `accent` / `ring` to the new base's default
-    /// shades. Call `.theme_color(...)` **after** this to reapply an
-    /// accent.
-    ///
-    /// ```
-    /// # use freyacn::theme::Theme;
-    /// let theme = Theme::dark()
-    ///     .base_color("stone")   // rebuild the neutral surfaces
-    ///     .theme_color("rose");  // then pick the accent
-    /// assert_eq!(theme.is_dark, true);
-    /// ```
-    ///
-    /// # Panics
-    /// Panics if `base` is not a known palette name.
     pub fn base_color(self, base: &str) -> Self {
         Self::from_base(base, self.is_dark)
     }
 
-    // ------------------------------------------------------------------
-    // Underlying constructor
-    // ------------------------------------------------------------------
-
-    /// Build a theme from a **base palette** and an explicit dark/light flag.
+    /// Build a theme from a base palette and a dark/light flag.
     ///
-    /// This is the underlying constructor. Prefer `Theme::light()` /
-    /// `Theme::dark()` combined with `.base_color(...)` for a cleaner
-    /// call site.
-    ///
-    /// Sets `background`, `foreground`, `muted`, `muted_foreground`,
-    /// `border`, `input`, `card`, `popover`, `secondary`, and
-    /// `secondary_foreground` to the appropriate shades of the chosen
-    /// base palette.
-    ///
-    /// `primary`, `primary_foreground`, `accent`, `accent_foreground`,
-    /// and `ring` start at the base palette's default shades
-    /// (`900/50` for light, `50/900` for dark). Override them with
-    /// `.theme_color(...)`.
+    /// `"neutral"` produces shadcn's exact `globals.css` values; every
+    /// other palette derives the same surface *structure* from the
+    /// Tailwind scale.
     ///
     /// # Panics
     /// Panics if `base` is not a known palette name.
     pub fn from_base(base: &str, dark: bool) -> Self {
         let colors = Colors::default();
-        let (bg, fg, muted, muted_fg, border, input, card, popover, secondary, secondary_fg) =
-            if dark {
-                match base {
-                    "slate" => (
-                        colors.slate_950,
-                        colors.slate_50,
-                        colors.slate_800,
-                        colors.slate_400,
-                        colors.slate_800,
-                        colors.slate_800,
-                        colors.slate_950,
-                        colors.slate_950,
-                        colors.slate_800,
-                        colors.slate_50,
-                    ),
-                    "stone" => (
-                        colors.stone_950,
-                        colors.stone_50,
-                        colors.stone_800,
-                        colors.stone_400,
-                        colors.stone_800,
-                        colors.stone_800,
-                        colors.stone_950,
-                        colors.stone_950,
-                        colors.stone_800,
-                        colors.stone_50,
-                    ),
-                    "mauve" => (
-                        colors.mauve_950,
-                        colors.mauve_50,
-                        colors.mauve_800,
-                        colors.mauve_400,
-                        colors.mauve_800,
-                        colors.mauve_800,
-                        colors.mauve_950,
-                        colors.mauve_950,
-                        colors.mauve_800,
-                        colors.mauve_50,
-                    ),
-                    "olive" => (
-                        colors.olive_950,
-                        colors.olive_50,
-                        colors.olive_800,
-                        colors.olive_400,
-                        colors.olive_800,
-                        colors.olive_800,
-                        colors.olive_950,
-                        colors.olive_950,
-                        colors.olive_800,
-                        colors.olive_50,
-                    ),
-                    "mist" => (
-                        colors.mist_950,
-                        colors.mist_50,
-                        colors.mist_800,
-                        colors.mist_400,
-                        colors.mist_800,
-                        colors.mist_800,
-                        colors.mist_950,
-                        colors.mist_950,
-                        colors.mist_800,
-                        colors.mist_50,
-                    ),
-                    "taupe" => (
-                        colors.taupe_950,
-                        colors.taupe_50,
-                        colors.taupe_800,
-                        colors.taupe_400,
-                        colors.taupe_800,
-                        colors.taupe_800,
-                        colors.taupe_950,
-                        colors.taupe_950,
-                        colors.taupe_800,
-                        colors.taupe_50,
-                    ),
-                    "zinc" => (
-                        colors.zinc_950,
-                        colors.zinc_50,
-                        colors.zinc_800,
-                        colors.zinc_400,
-                        colors.zinc_800,
-                        colors.zinc_800,
-                        colors.zinc_950,
-                        colors.zinc_950,
-                        colors.zinc_800,
-                        colors.zinc_50,
-                    ),
-                    "neutral" => (
-                        colors.neutral_950,
-                        colors.neutral_50,
-                        colors.neutral_800,
-                        colors.neutral_400,
-                        colors.neutral_800,
-                        colors.neutral_800,
-                        colors.neutral_950,
-                        colors.neutral_950,
-                        colors.neutral_800,
-                        colors.neutral_50,
-                    ),
-                    "gray" => (
-                        colors.gray_950,
-                        colors.gray_50,
-                        colors.gray_800,
-                        colors.gray_400,
-                        colors.gray_800,
-                        colors.gray_800,
-                        colors.gray_950,
-                        colors.gray_950,
-                        colors.gray_800,
-                        colors.gray_50,
-                    ),
-                    _ => panic!("Unknown base palette: {}", base),
-                }
-            } else {
-                match base {
-                    "slate" => (
-                        colors.slate_50,
-                        colors.slate_950,
-                        colors.slate_100,
-                        colors.slate_500,
-                        colors.slate_200,
-                        colors.slate_200,
-                        colors.white,
-                        colors.white,
-                        colors.slate_100,
-                        colors.slate_900,
-                    ),
-                    "stone" => (
-                        colors.stone_50,
-                        colors.stone_950,
-                        colors.stone_100,
-                        colors.stone_500,
-                        colors.stone_200,
-                        colors.stone_200,
-                        colors.white,
-                        colors.white,
-                        colors.stone_100,
-                        colors.stone_900,
-                    ),
-                    "mauve" => (
-                        colors.mauve_50,
-                        colors.mauve_950,
-                        colors.mauve_100,
-                        colors.mauve_500,
-                        colors.mauve_200,
-                        colors.mauve_200,
-                        colors.white,
-                        colors.white,
-                        colors.mauve_100,
-                        colors.mauve_900,
-                    ),
-                    "olive" => (
-                        colors.olive_50,
-                        colors.olive_950,
-                        colors.olive_100,
-                        colors.olive_500,
-                        colors.olive_200,
-                        colors.olive_200,
-                        colors.white,
-                        colors.white,
-                        colors.olive_100,
-                        colors.olive_900,
-                    ),
-                    "mist" => (
-                        colors.mist_50,
-                        colors.mist_950,
-                        colors.mist_100,
-                        colors.mist_500,
-                        colors.mist_200,
-                        colors.mist_200,
-                        colors.white,
-                        colors.white,
-                        colors.mist_100,
-                        colors.mist_900,
-                    ),
-                    "taupe" => (
-                        colors.taupe_50,
-                        colors.taupe_950,
-                        colors.taupe_100,
-                        colors.taupe_500,
-                        colors.taupe_200,
-                        colors.taupe_200,
-                        colors.white,
-                        colors.white,
-                        colors.taupe_100,
-                        colors.taupe_900,
-                    ),
-                    "zinc" => (
-                        colors.zinc_50,
-                        colors.zinc_950,
-                        colors.zinc_100,
-                        colors.zinc_500,
-                        colors.zinc_200,
-                        colors.zinc_200,
-                        colors.white,
-                        colors.white,
-                        colors.zinc_100,
-                        colors.zinc_900,
-                    ),
-                    "neutral" => (
-                        colors.neutral_50,
-                        colors.neutral_950,
-                        colors.neutral_100,
-                        colors.neutral_500,
-                        colors.neutral_200,
-                        colors.neutral_200,
-                        colors.white,
-                        colors.white,
-                        colors.neutral_100,
-                        colors.neutral_900,
-                    ),
-                    "gray" => (
-                        colors.gray_50,
-                        colors.gray_950,
-                        colors.gray_100,
-                        colors.gray_500,
-                        colors.gray_200,
-                        colors.gray_200,
-                        colors.white,
-                        colors.white,
-                        colors.gray_100,
-                        colors.gray_900,
-                    ),
-                    _ => panic!("Unknown base palette: {}", base),
-                }
-            };
 
-        // Default primary from the base palette.
-        let (primary, primary_fg) = if dark {
-            match base {
-                "slate" => (colors.slate_50, colors.slate_900),
-                "stone" => (colors.stone_50, colors.stone_900),
-                "mauve" => (colors.mauve_50, colors.mauve_900),
-                "olive" => (colors.olive_50, colors.olive_900),
-                "mist" => (colors.mist_50, colors.mist_900),
-                "taupe" => (colors.taupe_50, colors.taupe_900),
-                "zinc" => (colors.zinc_50, colors.zinc_900),
-                "neutral" => (colors.neutral_50, colors.neutral_900),
-                "gray" => (colors.gray_50, colors.gray_900),
-                _ => panic!("Unknown base palette: {}", base),
-            }
-        } else {
-            match base {
-                "slate" => (colors.slate_900, colors.slate_50),
-                "stone" => (colors.stone_900, colors.stone_50),
-                "mauve" => (colors.mauve_900, colors.mauve_50),
-                "olive" => (colors.olive_900, colors.olive_50),
-                "mist" => (colors.mist_900, colors.mist_50),
-                "taupe" => (colors.taupe_900, colors.taupe_50),
-                "zinc" => (colors.zinc_900, colors.zinc_50),
-                "neutral" => (colors.neutral_900, colors.neutral_50),
-                "gray" => (colors.gray_900, colors.gray_50),
-                _ => panic!("Unknown base palette: {}", base),
-            }
+        if base == "neutral" {
+            return Self::from_shadcn_neutral(colors, dark);
+        }
+
+        let t = match base {
+            "slate" => surface_tokens!(colors, slate, dark),
+            "stone" => surface_tokens!(colors, stone, dark),
+            "mauve" => surface_tokens!(colors, mauve, dark),
+            "olive" => surface_tokens!(colors, olive, dark),
+            "mist" => surface_tokens!(colors, mist, dark),
+            "taupe" => surface_tokens!(colors, taupe, dark),
+            "zinc" => surface_tokens!(colors, zinc, dark),
+            "gray" => surface_tokens!(colors, gray, dark),
+            _ => panic!("Unknown base palette: {}", base),
         };
 
-        let accent = primary;
-        let accent_fg = primary_fg;
-        let ring = primary;
-
-        let destructive = if dark { colors.red_800 } else { colors.red_500 };
-        let destructive_fg = colors.white;
-
-        let chart_1 = colors.blue_500;
-        let chart_2 = colors.green_500;
-        let chart_3 = colors.yellow_500;
-        let chart_4 = colors.red_500;
-        let chart_5 = colors.violet_500;
+        let destructive = if dark { colors.red_400 } else { colors.red_600 };
+        let chart_1 = if dark {
+            shadcn::DARK_CHART_1
+        } else {
+            shadcn::LIGHT_CHART_1
+        };
+        let chart_2 = if dark {
+            shadcn::DARK_CHART_2
+        } else {
+            shadcn::LIGHT_CHART_2
+        };
+        let chart_3 = if dark {
+            shadcn::DARK_CHART_3
+        } else {
+            shadcn::LIGHT_CHART_3
+        };
+        let chart_4 = if dark {
+            shadcn::DARK_CHART_4
+        } else {
+            shadcn::LIGHT_CHART_4
+        };
+        let chart_5 = if dark {
+            shadcn::DARK_CHART_5
+        } else {
+            shadcn::LIGHT_CHART_5
+        };
 
         Self {
             is_dark: dark,
             colors,
-            background: bg,
-            foreground: fg,
-            primary,
-            primary_foreground: primary_fg,
-            secondary,
-            secondary_foreground: secondary_fg,
-            muted,
-            muted_foreground: muted_fg,
-            accent,
-            accent_foreground: accent_fg,
+            background: t.bg,
+            foreground: t.fg,
+            primary: t.primary,
+            primary_foreground: t.primary_fg,
+            secondary: t.secondary,
+            secondary_foreground: t.secondary_fg,
+            muted: t.muted,
+            muted_foreground: t.muted_fg,
+            accent: t.accent,
+            accent_foreground: t.accent_fg,
             destructive,
-            destructive_foreground: destructive_fg,
-            card,
-            card_foreground: fg,
-            popover,
-            popover_foreground: fg,
-            border,
-            input,
-            ring,
+            destructive_foreground: colors.white,
+            card: t.card,
+            card_foreground: t.fg,
+            popover: t.popover,
+            popover_foreground: t.fg,
+            border: t.border,
+            input: t.input,
+            ring: t.ring,
             chart_1,
             chart_2,
             chart_3,
             chart_4,
             chart_5,
-
-            // Sidebar — starts in sync with the main surface; `theme_color`
-            // will re-align the primary/accent/ring tokens.
-            sidebar: bg,
-            sidebar_foreground: fg,
-            sidebar_primary: primary,
-            sidebar_primary_foreground: primary_fg,
-            sidebar_accent: accent,
-            sidebar_accent_foreground: accent_fg,
-            sidebar_border: border,
-            sidebar_ring: ring,
-
-            // Disabled — starts equal to the muted surface.
-            disabled: muted,
-            disabled_foreground: muted_fg,
-
-            // Default radius scale.
-            radius_sm: 2.0,
-            radius_md: 6.0,
-            radius_lg: 8.0,
-            radius_xl: 12.0,
+            sidebar: t.bg,
+            sidebar_foreground: t.fg,
+            sidebar_primary: t.primary,
+            sidebar_primary_foreground: t.primary_fg,
+            sidebar_accent: t.accent,
+            sidebar_accent_foreground: t.accent_fg,
+            sidebar_border: t.border,
+            sidebar_ring: t.ring,
+            disabled: t.muted,
+            disabled_foreground: t.muted_fg,
+            radius_sm: 6.0,
+            radius_md: 8.0,
+            radius_lg: 10.0,
+            radius_xl: 14.0,
         }
     }
 
-    /// Override the **accent (theme) colour** using any palette from `Colors`.
-    ///
-    /// This sets the `primary`, `primary_foreground`, `accent`, `accent_foreground`,
-    /// and `ring` fields to the appropriate shades of the chosen theme palette.
-    ///
-    /// The shade used depends on the theme’s `is_dark` flag:
-    /// - **Light mode**: uses the 500 shade of the palette (e.g., `blue_500`).
-    /// - **Dark mode**: uses the 400 shade of the palette (e.g., `blue_400`).
-    ///
-    /// The `primary_foreground` is automatically set to either `white` or `black`
-    /// based on the luminance of the chosen primary colour to ensure sufficient contrast.
-    ///
-    /// Chain this **after** `.base_color(...)`, because `.base_color(...)`
-    /// resets `primary`/`accent`/`ring` to the base palette's own defaults.
-    ///
-    /// # Arguments
-    /// - `theme`: the name of the accent palette (e.g., `"blue"`, `"red"`, `"violet"`).
-    ///
-    /// # Panics
-    /// Panics if the `theme` name is unknown.
+    /// Build the exact shadcn/ui `neutral` theme.
+    fn from_shadcn_neutral(colors: Colors, dark: bool) -> Self {
+        if dark {
+            Self {
+                is_dark: true,
+                colors,
+                background: shadcn::DARK_BACKGROUND,
+                foreground: shadcn::DARK_FOREGROUND,
+                primary: shadcn::DARK_PRIMARY,
+                primary_foreground: shadcn::DARK_PRIMARY_FOREGROUND,
+                secondary: shadcn::DARK_SECONDARY,
+                secondary_foreground: shadcn::DARK_SECONDARY_FOREGROUND,
+                muted: shadcn::DARK_MUTED,
+                muted_foreground: shadcn::DARK_MUTED_FOREGROUND,
+                accent: shadcn::DARK_ACCENT,
+                accent_foreground: shadcn::DARK_ACCENT_FOREGROUND,
+                destructive: shadcn::DARK_DESTRUCTIVE,
+                destructive_foreground: colors.white,
+                card: shadcn::DARK_CARD,
+                card_foreground: shadcn::DARK_CARD_FOREGROUND,
+                popover: shadcn::DARK_POPOVER,
+                popover_foreground: shadcn::DARK_POPOVER_FOREGROUND,
+                border: shadcn::DARK_BORDER,
+                input: shadcn::DARK_INPUT,
+                ring: shadcn::DARK_RING,
+                chart_1: shadcn::DARK_CHART_1,
+                chart_2: shadcn::DARK_CHART_2,
+                chart_3: shadcn::DARK_CHART_3,
+                chart_4: shadcn::DARK_CHART_4,
+                chart_5: shadcn::DARK_CHART_5,
+                sidebar: shadcn::DARK_SIDEBAR,
+                sidebar_foreground: shadcn::DARK_SIDEBAR_FOREGROUND,
+                sidebar_primary: shadcn::DARK_SIDEBAR_PRIMARY,
+                sidebar_primary_foreground: shadcn::DARK_SIDEBAR_PRIMARY_FOREGROUND,
+                sidebar_accent: shadcn::DARK_SIDEBAR_ACCENT,
+                sidebar_accent_foreground: shadcn::DARK_SIDEBAR_ACCENT_FOREGROUND,
+                sidebar_border: shadcn::DARK_SIDEBAR_BORDER,
+                sidebar_ring: shadcn::DARK_SIDEBAR_RING,
+                disabled: shadcn::DARK_MUTED,
+                disabled_foreground: shadcn::DARK_MUTED_FOREGROUND,
+                radius_sm: 6.0,
+                radius_md: 8.0,
+                radius_lg: 10.0,
+                radius_xl: 14.0,
+            }
+        } else {
+            Self {
+                is_dark: false,
+                colors,
+                background: shadcn::LIGHT_BACKGROUND,
+                foreground: shadcn::LIGHT_FOREGROUND,
+                primary: shadcn::LIGHT_PRIMARY,
+                primary_foreground: shadcn::LIGHT_PRIMARY_FOREGROUND,
+                secondary: shadcn::LIGHT_SECONDARY,
+                secondary_foreground: shadcn::LIGHT_SECONDARY_FOREGROUND,
+                muted: shadcn::LIGHT_MUTED,
+                muted_foreground: shadcn::LIGHT_MUTED_FOREGROUND,
+                accent: shadcn::LIGHT_ACCENT,
+                accent_foreground: shadcn::LIGHT_ACCENT_FOREGROUND,
+                destructive: shadcn::LIGHT_DESTRUCTIVE,
+                destructive_foreground: colors.white,
+                card: shadcn::LIGHT_CARD,
+                card_foreground: shadcn::LIGHT_CARD_FOREGROUND,
+                popover: shadcn::LIGHT_POPOVER,
+                popover_foreground: shadcn::LIGHT_POPOVER_FOREGROUND,
+                border: shadcn::LIGHT_BORDER,
+                input: shadcn::LIGHT_INPUT,
+                ring: shadcn::LIGHT_RING,
+                chart_1: shadcn::LIGHT_CHART_1,
+                chart_2: shadcn::LIGHT_CHART_2,
+                chart_3: shadcn::LIGHT_CHART_3,
+                chart_4: shadcn::LIGHT_CHART_4,
+                chart_5: shadcn::LIGHT_CHART_5,
+                sidebar: shadcn::LIGHT_SIDEBAR,
+                sidebar_foreground: shadcn::LIGHT_SIDEBAR_FOREGROUND,
+                sidebar_primary: shadcn::LIGHT_SIDEBAR_PRIMARY,
+                sidebar_primary_foreground: shadcn::LIGHT_SIDEBAR_PRIMARY_FOREGROUND,
+                sidebar_accent: shadcn::LIGHT_SIDEBAR_ACCENT,
+                sidebar_accent_foreground: shadcn::LIGHT_SIDEBAR_ACCENT_FOREGROUND,
+                sidebar_border: shadcn::LIGHT_SIDEBAR_BORDER,
+                sidebar_ring: shadcn::LIGHT_SIDEBAR_RING,
+                disabled: shadcn::LIGHT_MUTED,
+                disabled_foreground: shadcn::LIGHT_MUTED_FOREGROUND,
+                radius_sm: 6.0,
+                radius_md: 8.0,
+                radius_lg: 10.0,
+                radius_xl: 14.0,
+            }
+        }
+    }
+
+    /// Override the accent colour from a Tailwind palette family.
     pub fn theme_color(self, theme: &str) -> Self {
         let colors = self.colors;
         let primary = if self.is_dark {
@@ -1427,111 +1200,67 @@ impl Theme {
             colors.black
         };
 
-        let accent = primary;
-        let accent_fg = primary_fg;
-        let ring = primary;
-
         Self {
             primary,
             primary_foreground: primary_fg,
-            accent,
-            accent_foreground: accent_fg,
-            ring,
-            // Keep the sidebar accent group in sync with the main one.
+            accent: primary,
+            accent_foreground: primary_fg,
+            ring: primary,
             sidebar_primary: primary,
             sidebar_primary_foreground: primary_fg,
-            sidebar_accent: accent,
-            sidebar_accent_foreground: accent_fg,
-            sidebar_ring: ring,
+            sidebar_accent: primary,
+            sidebar_accent_foreground: primary_fg,
+            sidebar_ring: primary,
             ..self
         }
     }
 
-    // ------------------------------------------------------------------------
-    // Base palette shortcuts (fluent)
-    // ------------------------------------------------------------------------
-
-    /// Set the base palette to `stone`.
-    ///
-    /// Shorthand for `self.base_color("stone")`. Chain
-    /// `.theme_color(...)` afterwards to pick the accent.
-    ///
-    /// ```
-    /// # use freyacn::theme::Theme;
-    /// let theme = Theme::dark().stone().theme_color("amber");
-    /// assert_eq!(theme.is_dark, true);
-    /// ```
+    // ---- Base palette shortcuts ----
     pub fn stone(self) -> Self {
         self.base_color("stone")
     }
-
-    /// Set the base palette to `mauve`.
     pub fn mauve(self) -> Self {
         self.base_color("mauve")
     }
-
-    /// Set the base palette to `olive`.
     pub fn olive(self) -> Self {
         self.base_color("olive")
     }
-
-    /// Set the base palette to `mist`.
     pub fn mist(self) -> Self {
         self.base_color("mist")
     }
-
-    /// Set the base palette to `taupe`.
     pub fn taupe(self) -> Self {
         self.base_color("taupe")
     }
-
-    /// Set the base palette to `slate` (the default).
     pub fn slate(self) -> Self {
         self.base_color("slate")
     }
-
-    /// Set the base palette to `gray`.
     pub fn gray(self) -> Self {
         self.base_color("gray")
     }
-
-    /// Set the base palette to `zinc`.
     pub fn zinc(self) -> Self {
         self.base_color("zinc")
     }
-
-    /// Set the base palette to `neutral`.
     pub fn neutral(self) -> Self {
         self.base_color("neutral")
     }
 
-    // ------------------------------------------------------------------------
-    // Radius helpers (fluent overrides)
-    // ------------------------------------------------------------------------
-
-    /// Override the `rounded-sm` radius value.
+    // ---- Radius overrides ----
     pub fn radius_sm(mut self, value: f32) -> Self {
         self.radius_sm = value;
         self
     }
-    /// Override the `rounded-md` radius value.
     pub fn radius_md(mut self, value: f32) -> Self {
         self.radius_md = value;
         self
     }
-    /// Override the `rounded-lg` radius value.
     pub fn radius_lg(mut self, value: f32) -> Self {
         self.radius_lg = value;
         self
     }
-    /// Override the `rounded-xl` radius value.
     pub fn radius_xl(mut self, value: f32) -> Self {
         self.radius_xl = value;
         self
     }
-    /// Set the base radius; derives `sm`, `md`, `lg`, `xl` from it the way
-    /// shadcn does (`sm = base - 4`, `md = base - 2`, `lg = base`,
-    /// `xl = base + 4`), clamped at 0.
     pub fn radius(mut self, value: f32) -> Self {
         self.radius_sm = (value - 4.0).max(0.0);
         self.radius_md = (value - 2.0).max(0.0);
@@ -1542,27 +1271,11 @@ impl Theme {
 }
 
 // ================================================================
-// Hooks – Theme access and initialization
+// Hooks
 // ================================================================
 
-/// Provides a custom FreyaCN theme, reusing an existing context if one already exists.
-///
-/// If a theme context is already present in the current scope, this will update it
-/// with the new theme value; otherwise, it creates a new context.
-///
-/// This is the recommended way to set the root theme for your application.
-///
-/// # Example
-/// ```no_run
-/// # use freyacn::prelude::*;
-/// fn App() -> impl IntoElement {
-///     let theme = Theme::light().base_color("slate").theme_color("blue");
-///     use_init_cn_theme(theme);
-///
-///     // Your app components...
-///     rect().expanded().child("Hello, world!")
-/// }
-/// ```
+/// Provides a custom FreyaCN theme, reusing an existing context if one
+/// already exists.
 pub fn use_init_cn_theme(theme: Theme) -> State<Theme> {
     use_hook(|| {
         if let Some(mut existing) = try_consume_context::<State<Theme>>() {
@@ -1577,21 +1290,6 @@ pub fn use_init_cn_theme(theme: Theme) -> State<Theme> {
 }
 
 /// Provides a custom FreyaCN theme, always creating a new context.
-///
-/// Unlike `use_init_cn_theme`, this will never reuse an existing context.
-/// Use this when you need to override the theme for a subtree, regardless
-/// of any parent theme.
-///
-/// # Example
-/// ```no_run
-/// # use freyacn::prelude::*;
-/// fn DarkSubtree() -> impl IntoElement {
-///     let dark_theme = Theme::dark().base_color("zinc").theme_color("rose");
-///     use_provide_cn_theme(dark_theme);
-///     // Children here will see the dark theme.
-///     rect().child("Dark subtree")
-/// }
-/// ```
 pub fn use_provide_cn_theme(theme: Theme) -> State<Theme> {
     use_hook(|| {
         let state = State::create(theme);
@@ -1601,38 +1299,14 @@ pub fn use_provide_cn_theme(theme: Theme) -> State<Theme> {
 }
 
 /// Subscribes to the current FreyaCN theme.
-///
-/// This hook will panic if no theme has been provided in the context.
-/// For a fallback that doesn't panic, use `get_cn_theme_or_default()` instead.
-///
-/// # Example
-/// ```no_run
-/// # use freyacn::prelude::*;
-/// fn MyButton() -> impl IntoElement {
-///     let theme = use_cn_theme();
-///     let background = theme.read().background;
-///     rect().background(background)
-/// }
-/// ```
 pub fn use_cn_theme() -> State<Theme> {
     use_consume::<State<Theme>>()
 }
 
-/// Subscribes to the current FreyaCN theme, falling back to a default theme if none is provided.
-///
-/// The default theme is a light slate theme with slate accent.
-/// This is useful for built‑in components that should work even without an explicit theme provider.
-///
-/// # Example
-/// ```no_run
-/// # use freyacn::prelude::*;
-/// fn MyComponent() -> impl IntoElement {
-///     let theme = get_cn_theme_or_default();
-///     rect().background(theme.read().background)
-/// }
-/// ```
+/// Subscribes to the current FreyaCN theme, falling back to a default
+/// light neutral theme if none is provided.
 pub fn get_cn_theme_or_default() -> Readable<Theme> {
     try_consume_context::<State<Theme>>()
         .map(|v| v.into())
-        .unwrap_or_else(|| Theme::light().theme_color("slate").into())
+        .unwrap_or_else(|| Theme::light().into())
 }

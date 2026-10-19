@@ -304,6 +304,23 @@ impl PartialEq for DivActiveState {
     }
 }
 
+/// Grid column count propagated from a parent `Div` with `grid_cols(n)`.
+///
+/// A `Div` inside a grid reads this to compute its own width from
+/// `col_span` (defaulting to span 1). The value is `State<Option<u32>>`
+/// so a `Div` without `grid_cols` can *shadow* an ancestor's value —
+/// only direct children of a grid are grid items, matching CSS.
+#[derive(Clone)]
+pub struct DivGridColsCtx {
+    pub cols: State<Option<u32>>,
+}
+
+impl PartialEq for DivGridColsCtx {
+    fn eq(&self, other: &Self) -> bool {
+        *self.cols.peek() == *other.cols.peek()
+    }
+}
+
 // ==============================================================
 // Macros — inherent Style methods
 // ==============================================================
@@ -1159,6 +1176,25 @@ impl Style {
     pub fn letter_spacing(mut self, value: f32) -> Self {
         self.letter_spacing = Some(value);
         self
+    }
+    // Tailwind `tracking-*` shortcuts — map to `letter-spacing` in em.
+    pub fn tracking_tighter(self) -> Self {
+        self.letter_spacing(-0.05)
+    }
+    pub fn tracking_tight(self) -> Self {
+        self.letter_spacing(-0.025)
+    }
+    pub fn tracking_normal(self) -> Self {
+        self.letter_spacing(0.0)
+    }
+    pub fn tracking_wide(self) -> Self {
+        self.letter_spacing(0.025)
+    }
+    pub fn tracking_wider(self) -> Self {
+        self.letter_spacing(0.05)
+    }
+    pub fn tracking_widest(self) -> Self {
+        self.letter_spacing(0.1)
     }
     pub fn text_indent(mut self, value: f32) -> Self {
         self.text_indent = Some(value);
@@ -3611,6 +3647,24 @@ pub trait StyleExt: Sized {
     }
     fn letter_spacing(self, value: f32) -> Self {
         self.map_style(|s| s.letter_spacing(value))
+    }
+    fn tracking_tighter(self) -> Self {
+        self.map_style(|s| s.tracking_tighter())
+    }
+    fn tracking_tight(self) -> Self {
+        self.map_style(|s| s.tracking_tight())
+    }
+    fn tracking_normal(self) -> Self {
+        self.map_style(|s| s.tracking_normal())
+    }
+    fn tracking_wide(self) -> Self {
+        self.map_style(|s| s.tracking_wide())
+    }
+    fn tracking_wider(self) -> Self {
+        self.map_style(|s| s.tracking_wider())
+    }
+    fn tracking_widest(self) -> Self {
+        self.map_style(|s| s.tracking_widest())
     }
     fn text_indent(self, value: f32) -> Self {
         self.map_style(|s| s.text_indent(value))

@@ -3,7 +3,7 @@
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{Error, Fields, Ident, ItemStruct, Token, punctuated::Punctuated};
+use syn::{Error, Fields, Ident, ItemStruct, LitStr, Token, punctuated::Punctuated};
 
 // ---------------------------------------------------------------------------
 // Supported extensions
@@ -81,6 +81,7 @@ fn extension_for(
     name: &str,
     struct_name: &Ident,
     variant_field_names: &[Ident],
+    base_style: Option<&LitStr>,
 ) -> syn::Result<Extension> {
     let ext = match name {
         "children" => Extension {
@@ -127,19 +128,39 @@ fn extension_for(
         // -------------------------------------------------------------------
         // style  →  freyacn-cargo-workspace::StyleExt
         // -------------------------------------------------------------------
+        //
+        // The `style` field is a plain `Style` — the user's override layer.
+        // At render time, `#[component]` builds the effective style by
+        // folding in order:
+        //
+        //     Style::default()
+        //       .style(<base>)           // optional, from variants("...")
+        //       .merge(variant.resolve()) // per variant, declaration order
+        //       .merge(self.style.clone())// user overrides
+        //
+        // If neither a base style nor variants are declared, the local
+        // binding is just `&self.style` — a cheap fast path with no merge.
         "style" => {
-            // The `style` field itself is a plain `Style` — the user's
-            // override layer. `#[component]` merges variant-derived styles
-            // into a local `style` binding at render time.
-            //
-            // If there are no variants, we emit a simple reference binding.
-            // Otherwise we compute a merged value into a local and bind
-            // that.
-            let locals = if variant_field_names.is_empty() {
+            let has_base = base_style.is_some();
+            let has_variants = !variant_field_names.is_empty();
+
+            let locals = if !has_base && !has_variants {
+                // Fast path: nothing to merge.
                 vec![quote! {
                     let style: &::freyacn::prelude::Style = &self.style;
                 }]
             } else {
+                // Fold chain: base (optional) → each variant → user overrides.
+                let base_assign = match base_style {
+                    Some(lit) => quote! {
+                        __freyacn_base = ::freyacn::prelude::StyleExt::style(
+                            __freyacn_base,
+                            #lit,
+                        );
+                    },
+                    None => quote! {},
+                };
+
                 let merges = variant_field_names.iter().map(|field| {
                     quote! {
                         __freyacn_base = __freyacn_base.merge(
@@ -147,10 +168,12 @@ fn extension_for(
                         );
                     }
                 });
+
                 vec![quote! {
                     let __freyacn_merged_style: ::freyacn::prelude::Style = {
                         let mut __freyacn_base =
                             <::freyacn::prelude::Style as ::core::default::Default>::default();
+                        #base_assign
                         #(#merges)*
                         __freyacn_base.merge(self.style.clone())
                     };
@@ -163,9 +186,11 @@ fn extension_for(
                     /// Accumulated user overrides.
                     ///
                     /// Holds the style applied via [`StyleExt`] methods.
-                    /// Variant-derived styles are merged on top of this at
-                    /// render time — see the component macro's generated
-                    /// `render` body for details.
+                    /// If the component declares a base style in
+                    /// `variants("...")` or any variant props, those are
+                    /// merged on top of this field at render time — see the
+                    /// component macro's generated `render` body for
+                    /// details.
                     pub style: ::freyacn::prelude::Style
                 }],
                 inits: vec![quote! {
@@ -267,10 +292,20 @@ pub struct ExtensionsCode {
     pub trait_impls: Vec<TokenStream2>,
 }
 
+/// Collect every extension bundle requested in `names`.
+///
+/// `base_style` is an optional leading string literal parsed from
+/// `variants("…")` inside `#[component]`. It is folded into the
+/// generated `style` local, below variant styles and user overrides —
+/// matching shadcn's `cn(base, variant, size, user)` layering.
+///
+/// Standalone `#[extensions(...)]` has no variant context, so it passes
+/// `None`.
 pub fn collect(
     struct_name: &Ident,
     names: &[String],
     variant_field_names: &[Ident],
+    base_style: Option<&LitStr>,
 ) -> syn::Result<ExtensionsCode> {
     let mut out = ExtensionsCode {
         field_defs: Vec::new(),
@@ -292,7 +327,7 @@ pub fn collect(
             }
         }
 
-        let ext = extension_for(name, struct_name, variant_field_names)?;
+        let ext = extension_for(name, struct_name, variant_field_names, base_style)?;
         out.field_defs.extend(ext.fields);
         out.field_inits.extend(ext.inits);
         out.local_bindings.extend(ext.locals);
@@ -311,7 +346,9 @@ pub fn parse_extensions(attr: TokenStream2, item: TokenStream2) -> syn::Result<T
     let struct_name = item_struct.ident.clone();
 
     let names = parse_names(attr)?;
-    let code = collect(&struct_name, &names, &[])?;
+    // Standalone extensions never have variant or base-style context —
+    // those are `#[component(...)]` concepts.
+    let code = collect(&struct_name, &names, &[], None)?;
 
     let Fields::Named(named) = &item_struct.fields else {
         return Err(Error::new_spanned(
