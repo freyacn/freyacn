@@ -21,6 +21,10 @@ macros. It also re-exports Freya's own prelude, so you don't need a direct
 
 Built against **Freya 0.5.0-rc.10**.
 
+> **Complete API reference:** see [`API.md`](../../API.md) at the workspace root.
+> It documents every component, every `StyleExt` method, every macro, and the
+> full theme API.
+
 ---
 
 ## Installation
@@ -712,7 +716,7 @@ keyed on `src`, and falls back gracefully when the file is missing.
 - **`object-fit` mapping**:
 
   | `ImageFit` | Freya `AspectRatio` | Freya `ImageCover` |
-      |------------|---------------------|--------------------|
+        |------------|---------------------|--------------------|
   | `Fill`     | `None` (stretch)    | `Fill`             |
   | `Cover`    | `Max` (cover, crop) | `Center`           |
   | `Contain`  | `Min` (fit inside)  | `Fill`             |

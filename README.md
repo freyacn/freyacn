@@ -16,6 +16,9 @@ into theme-aware, prop-driven components.
 
 **Targets Freya `0.5.0-rc.10`.**
 
+> **Complete API reference:** [`API.md`](./API.md) — every component, every
+> `StyleExt` method, every macro, and the full theme system, with examples.
+
 ---
 
 ## Overview
@@ -933,7 +936,7 @@ handle keyed on `src`, and falls back gracefully when the file is missing.
 - **`object-fit` mapping**:
 
   | `ImageFit` | Freya `AspectRatio` | Freya `ImageCover` |
-        |------------|---------------------|--------------------|
+              |------------|---------------------|--------------------|
   | `Fill`     | `None` (stretch)    | `Fill`             |
   | `Cover`    | `Max` (cover, crop) | `Center`           |
   | `Contain`  | `Min` (fit inside)  | `Fill`             |

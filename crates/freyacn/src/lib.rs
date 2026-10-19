@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
-
+#[doc = ""]
+#[doc = include_str!("../API.md")]
 extern crate self as freyacn;
 
 pub mod cn;
