@@ -1,8 +1,7 @@
 # freyacn
 
 > ⚠️ **Work in progress.** `freyacn` is under active development and its public
-> API is **not yet stable**. Breaking changes may land in any release, and the
-> crate has not been published to crates.io yet.
+> API is **not yet stable**. Breaking changes may land in any release.
 >
 > **Status:** pre-alpha. Expect rough edges, missing features, and occasional
 > doc/code drift. If you want to try it, use a `git` dependency pinned to a
@@ -716,7 +715,7 @@ keyed on `src`, and falls back gracefully when the file is missing.
 - **`object-fit` mapping**:
 
   | `ImageFit` | Freya `AspectRatio` | Freya `ImageCover` |
-        |------------|---------------------|--------------------|
+          |------------|---------------------|--------------------|
   | `Fill`     | `None` (stretch)    | `Fill`             |
   | `Cover`    | `Max` (cover, crop) | `Center`           |
   | `Contain`  | `Min` (fit inside)  | `Fill`             |
