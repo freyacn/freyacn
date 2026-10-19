@@ -4,11 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-authors = ["Bright Madueke <maduekebright399@gmail.com>"]
 description = "Procedural macros for building feyacn compnents"
 readme = "README.md"
-keywords = ["ui", "freyacn", "proc_macro", "procmacro"]
-categories = ["gui", "development-tools"]
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 proc-macro = true

@@ -5,8 +5,12 @@ edition.workspace = true
 description = "A Freya component library with Tailwind‑inspired extension traits for building beautiful, theme‑aware UIs."
 license.workspace = true
 readme = "README.md"
-keywords = ["gui", "freya", "ui", "components", "tailwind"]
-categories = ["gui", "development-tools"]
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [features]
 hotreload = ["freya/hotreload"]
